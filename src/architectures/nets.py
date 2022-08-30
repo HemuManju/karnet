@@ -7,14 +7,14 @@ import torch.nn.functional as F
 from src.visualization.visualize import interactive_show_grid
 
 from .layer_config import (
-    layers_encoder_128,
-    layers_decoder_128,
-    layers_encoder_64,
-    layers_decoder_64,
-    layers_encoder_256,
-    layers_decoder_256,
+    layers_encoder_256_128,
+    layers_decoder_256_128,
+    layers_encoder_256_64,
+    layers_decoder_256_64,
+    layers_encoder_256_256,
+    layers_decoder_256_256,
 )
-from .utils import build_conv_model, build_deconv_model, Flatten
+from .utils import build_conv_model, build_deconv_model, Flatten, get_model
 
 
 class ConvNet(pl.LightningModule):
@@ -171,27 +171,23 @@ class CNNAutoEncoder(pl.LightningModule):
 
         if latent_size == 64:
             hparams["autoencoder_config"] = {
-                "layers_encoder": layers_encoder_64,
-                "layers_decoder": layers_decoder_64,
+                "layers_encoder": layers_encoder_256_64,
+                "layers_decoder": layers_decoder_256_64,
             }
         elif latent_size == 128:
             hparams["autoencoder_config"] = {
-                "layers_encoder": layers_encoder_128,
-                "layers_decoder": layers_decoder_128,
+                "layers_encoder": layers_encoder_256_128,
+                "layers_decoder": layers_decoder_256_128,
             }
         elif latent_size == 256:
             hparams["autoencoder_config"] = {
-                "layers_encoder": layers_encoder_256,
-                "layers_decoder": layers_decoder_256,
+                "layers_encoder": layers_encoder_256_256,
+                "layers_decoder": layers_decoder_256_256,
             }
 
         # Encoder and decoder network
-        self.encoder, image_sizes = build_conv_model(
-            image_size, hparams["autoencoder_config"]['layers_encoder']
-        )
-        self.decoder = build_deconv_model(
-            image_size, image_sizes, hparams["autoencoder_config"]['layers_encoder'],
-        )
+        self.encoder = get_model(hparams["autoencoder_config"]['layers_encoder'])
+        self.decoder = get_model(hparams["autoencoder_config"]['layers_decoder'])
 
     def encode(self, x):
         x = self.encoder(x)

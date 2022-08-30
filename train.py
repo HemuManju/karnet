@@ -83,6 +83,49 @@ with skip_run('skip', 'carnet_autoencoder_training') as check, check():
         )
     trainer.fit(model)
 
+with skip_run('skip', 'verify_autoencoder') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/autoencoder.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/AUTOENCODER'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    # Setup
+    read_path = f'logs/2022-08-29/AUTOENCODER/autoencoder.ckpt'
+    net = CNNAutoEncoder(cfg)
+    net = load_checkpoint(net, checkpoint_path=read_path)
+    net.eval()
+    # net(net.example_input_array)
+
+    # Dataloader
+    data_loader = autoencoder_dataset.webdataset_data_iterator(cfg)
+
+    for x, y in data_loader['training']:
+        net.eval()
+        reconstructured, embeddings = net(x)
+        input_test = x[0].detach().cpu().numpy()
+        input_test = np.rot90(np.swapaxes(input_test, 2, 0))
+        plt.imshow(input_test, origin='lower')
+        plt.show()
+
+        input_test = y[0].detach().cpu().numpy()
+        input_test = np.rot90(np.swapaxes(input_test, 2, 0))
+        plt.imshow(input_test, origin='lower')
+        plt.show()
+
+        test = reconstructured[0].detach().cpu().numpy()
+        test = np.rot90(np.swapaxes(test, 2, 0))
+        plt.imshow(test, origin='lower')
+        plt.show()
+
+        break
+
 with skip_run('skip', 'carnet_training') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)

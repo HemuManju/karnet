@@ -86,6 +86,16 @@ def convtransp_kernel_shape(
     return [h, w]
 
 
+def get_model(config) -> nn.Module:
+    """Get model from layer config dictionary."""
+    modules = []
+    for l in config:
+        layer_type = l.pop("type")
+        layer = getattr(torch.nn, layer_type)(**l)
+        modules.append(layer)
+    return nn.Sequential(*modules)
+
+
 def conv_output_shape(in_size, kernel_size=1, stride=1, pad=0, dilation=1):
     from math import floor
 

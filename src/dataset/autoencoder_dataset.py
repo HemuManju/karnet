@@ -56,7 +56,7 @@ def webdataset_data_iterator(config):
             dataset = (
                 wds.WebDataset(path, shardshuffle=False)
                 .decode("torchrgb")
-                .then(generate_seqs, SEQ_LEN, config)
+                .then(generate_seqs, concatenate_samples, SEQ_LEN, config)
             )
             data_loader = wds.WebLoader(
                 dataset,

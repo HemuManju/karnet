@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from torchmetrics import MultiScaleStructuralSimilarityIndexMeasure
+from pytorch_msssim import MS_SSIM
 
 
 class WeightedMSE(torch.nn.MSELoss):
@@ -41,11 +41,9 @@ class Autoencoder(pl.LightningModule):
 
         # Predict and calculate loss
         output, embedding = self.forward(x)
-        criterion = MultiScaleStructuralSimilarityIndexMeasure(
-            kernel=9, betas=(1.0, 1.0, 1.0, 1.0), normalize='relu'
-        )
+        criterion = MS_SSIM(data_range=1, size_average=True, channel=1)
 
-        loss = 1 - criterion(output, y)
+        loss = 1.0 - criterion(output, y)
 
         self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
         return loss
@@ -55,10 +53,8 @@ class Autoencoder(pl.LightningModule):
 
         # Predict and calculate loss
         output, embedding = self.forward(x)
-        criterion = MultiScaleStructuralSimilarityIndexMeasure(
-            kernel=9, betas=(1.0, 1.0, 1.0, 1.0), normalize='relu'
-        )
-        loss = 1 - criterion(output, y)
+        criterion = MS_SSIM(data_range=1, size_average=True, channel=1)
+        loss = 1.0 - criterion(output, y)
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         return loss
