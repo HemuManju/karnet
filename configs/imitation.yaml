@@ -9,12 +9,12 @@ VALID_SIZE: 0.15
 
 ##-----------------------------------------------------#
 # Data Parameters
-obs_size: 2
+obs_size: 1
 n_actions: 3
 frame_skip: 4
 branch_weight: 1
 speed_weight: 1
-number_workers: 8
+number_workers: 1
 
 ##-----------------------------------------------------#
 # CARNet Parameters
@@ -32,7 +32,7 @@ crop_image_resize: [1, 78, 128]
 image_resize: [1, 128, 128]
 alpha: 0.75
 beta: 0.1
-action_processing_id: 1 # 1, 2, 3, 4, 5
+action_processing_id: 5 # 1, 2, 3, 4, 5
 
 ##-----------------------------------------------------#
 # Data splitting scheme
@@ -46,6 +46,7 @@ data_split:
         'ClearSunset',
         'MidRainSunset',
         'SoftRainNoon',
+        'SoftRainSunset',
       ]
     behavior: ['cautious']
   validation:

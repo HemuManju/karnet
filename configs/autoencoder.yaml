@@ -1,6 +1,6 @@
 ##-----------------------------------------------------#
 # Training parameters
-NUM_EPOCHS: 10
+NUM_EPOCHS: 50
 BATCH_SIZE: 64
 LEARNING_RATE: 0.0001
 DROP_OUT: 0.10
@@ -43,11 +43,11 @@ data_split:
         'HardRainNoon',
         'HardRainSunset',
       ]
-    behavior: ['normal', 'cautious']
+    behavior: ['cautious']
   validation:
     town: ['Town01']
     season: ['ClearSunset']
-    behavior: ['normal', 'cautious']
+    behavior: ['cautious']
   testing:
     town: []
     season: []

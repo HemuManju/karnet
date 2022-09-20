@@ -18,6 +18,7 @@ from src.data.create_data import create_regression_data
 from src.data.stats import classification_accuracy
 
 from src.dataset import autoencoder_dataset, imitation_dataset, rnn_dataset
+from src.dataset.utils import WebDatasetReader
 
 from src.architectures.nets import CARNet, CNNAutoEncoder, CIRLCARNet, CIRLBasePolicy
 
@@ -43,6 +44,10 @@ with skip_run('skip', 'carnet_autoencoder_training') as check, check():
     # Random seed
     gpus = get_num_gpus()
     torch.manual_seed(cfg['pytorch_seed'])
+
+    # Add navigation type
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Checkpoint
     navigation_type = cfg['navigation_types'][0]
@@ -231,15 +236,51 @@ with skip_run('skip', 'imitation_with_basenet') as check, check():
 
 with skip_run('skip', 'regression_for_PI_controller') as check, check():
     # Load the configuration
-    cfg = yaml.load(open('configs/warmstart.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/WARMSTART'
+    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
 
     # Navigation type
     navigation_type = cfg['navigation_types'][0]
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     dataset = imitation_dataset.webdataset_data_iterator(cfg)
+    for data in dataset['training']:
+        test = data[2].reshape(128, 2, 5).numpy()
+        print(data[2][0, :])
+        for d in test:
+            plt.scatter(d[0, :], d[1, :])
+            plt.pause(0.01)
+
     least_squares(dataset)
+
+with skip_run('skip', 'dataset_analysis') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+
+    # Navigation type
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    # Dataset reader
+    reader = WebDatasetReader(
+        cfg,
+        file_path='/home/hemanth/Desktop/CARLA/carla_data/Town01_NAVIGATION/navigation/Town01_HardRainNoon_cautious_000002.tar',
+    )
+    dataset = reader.get_dataset(concat_n_samples=1)
+    waypoint_data = []
+    location = []
+    for i, data in enumerate(dataset):
+        waypoint_data.append(data['json'][0]['waypoints'])
+        location.append(data['json'][0]['location'])
+        if i > 1000:
+            break
+
+    test = np.array(sum(waypoint_data, []))
+    test_loc = np.array(location)
+    plt.scatter(test[:, 0], test[:, 1])
+    plt.scatter(test_loc[:, 0], test_loc[:, 1], marker='s')
+    plt.show()
 
 with skip_run('skip', 'imitation_with_carnet') as check, check():
     # Load the configuration

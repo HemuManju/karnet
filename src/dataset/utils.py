@@ -7,6 +7,9 @@ import numpy as np
 
 import natsort
 
+
+import webdataset as wds
+import torch
 from torchvision import transforms
 
 
@@ -93,3 +96,44 @@ def get_preprocessing_pipeline(config):
 
 def rotate(points, origin, angle):
     return (points - origin) * np.exp(complex(0, angle)) + origin
+
+
+class WebDatasetReader:
+    def __init__(self, config, file_path) -> None:
+        self.file_path = file_path
+        self.cfg = config
+        self.sink = None
+
+    def _concatenate_samples(self, samples):
+        combined_data = {
+            k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
+        }
+        return combined_data
+
+    def _generate_seqs(self, src, nsamples=3):
+        it = iter(src)
+        result = tuple(islice(it, nsamples))
+        if len(result) == nsamples:
+            yield self._concatenate_samples(result)
+        for elem in it:
+            result = result[1:] + (elem,)
+            yield self._concatenate_samples(result)
+
+    def get_dataset(self, concat_n_samples=None):
+        if concat_n_samples is None:
+            dataset = wds.WebDataset(self.file_path).decode("torchrgb")
+        else:
+            dataset = (
+                wds.WebDataset(self.file_path)
+                .decode("torchrgb")
+                .then(self._generate_seqs, concat_n_samples)
+            )
+        return dataset
+
+    def get_dataloader(self, num_workers, batch_size, concat_n_samples=None):
+        # Get the dataset
+        dataset = self.get_dataset(concat_n_samples=concat_n_samples)
+        data_loader = wds.WebLoader(
+            dataset, num_workers=num_workers, shuffle=False, batch_size=batch_size,
+        )
+        return data_loader

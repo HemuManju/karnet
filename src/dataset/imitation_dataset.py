@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import webdataset as wds
 import torch
@@ -45,23 +47,24 @@ def post_process_action(data, config):
 def calculate_ego_frame_waypoints(data):
     location = data['location']
     waypoints = data['waypoints']
-    if len(waypoints) > 1:
-        # resample waypoints
-        waypoints = resample_waypoints(
-            waypoints, np.array(location[0:2]), resample=True
-        )
-        current_location = np.array(location[0:2])
-        ego_frame_waypoints = waypoints - current_location
 
-        # Calculate angle between direction and y axis
-        v0 = waypoints[1] - waypoints[0]
-        v1 = np.array([0, 1])
-        angle = calculate_angle(v0, v1)
-        ego_frame_waypoints = rotate(
-            ego_frame_waypoints, origin=np.array([0, 0]), angle=angle
-        ).real
-    else:
-        ego_frame_waypoints = np.zeros((5, 2))
+    # Extract the angle and form the rotation matrix
+    # NOTE: Verify this
+    v_vec = data['moving_direction']
+    theta = math.atan2(v_vec[1], v_vec[0])
+    print(theta)
+    R = np.array(
+        [[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]]
+    )
+    w_vec = np.array(waypoints)[:, 0:2] - np.array([location[0:2]])
+    print(w_vec.T)
+    # print(waypoints)
+    # print(location)
+    # print(R.T.dot(P.T))
+    print('--------------')
+    ego_frame_waypoints = w_vec.T  # R.T.dot(P.T)
+    # print(ego_frame_waypoints)
+    # afaf
     return ego_frame_waypoints
 
 
@@ -81,6 +84,10 @@ def resample_waypoints(waypoints, current_location, resample=False):
         # Add initial location
         x = np.insert(x, 0, current_location[0])
         y = np.insert(y, 0, current_location[1])
+
+        # Shift the frame to origin
+        # x = x - x[0]
+        # y = y - y[0]
 
         # get the cumulative distance along the contour
         dist = np.sqrt((x[:-1] - x[1:]) ** 2 + (y[:-1] - y[1:]) ** 2)
