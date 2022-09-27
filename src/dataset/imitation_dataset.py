@@ -10,6 +10,34 @@ from .utils import get_preprocessing_pipeline, rotate, get_dataset_paths, genera
 import matplotlib.pyplot as plt
 
 
+def get_projections(x, on):
+    # Make the third dimension zero
+    on[2] = 0.0
+    x[2] = 0.0
+    proj = np.zeros((1, 2))
+    parallel = np.dot(x, on) / np.dot(on, on) * on
+    perpendicular = x - parallel
+
+    proj[0, 0] = -perpendicular[0]  # The directions are reversed in carla
+    proj[0, 1] = parallel[1]
+
+    # Find the rotation angle such the movement direction is always positive
+    if on[1] < 0:
+        theta = math.pi
+        R = np.array(
+            [[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]]
+        )
+        proj = R.dot(proj.T).flatten()
+    return proj
+
+
+def project_waypoints(waypoints, vector):
+    projected_waypoints = np.zeros((len(waypoints), 2))
+    for i, waypoint in enumerate(waypoints):
+        projected_waypoints[i, :] = get_projections(waypoint, vector)
+    return projected_waypoints
+
+
 def post_process_action(data, config):
     if config['action_processing_id'] == 1:
         action = torch.tensor(
@@ -45,26 +73,15 @@ def post_process_action(data, config):
 
 
 def calculate_ego_frame_waypoints(data):
-    location = data['location']
-    waypoints = data['waypoints']
+    # Direction vector
+    v_vec = np.array(data['moving_direction'])
 
-    # Extract the angle and form the rotation matrix
-    # NOTE: Verify this
-    v_vec = data['moving_direction']
-    theta = math.atan2(v_vec[1], v_vec[0])
-    print(theta)
-    R = np.array(
-        [[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]]
-    )
-    w_vec = np.array(waypoints)[:, 0:2] - np.array([location[0:2]])
-    print(w_vec.T)
-    # print(waypoints)
-    # print(location)
-    # print(R.T.dot(P.T))
-    print('--------------')
-    ego_frame_waypoints = w_vec.T  # R.T.dot(P.T)
-    # print(ego_frame_waypoints)
-    # afaf
+    # Origin shift
+    shifted_waypoints = np.array(data['waypoints']) - np.array(data['location'])
+
+    # Projected points
+    ego_frame_waypoints = project_waypoints(shifted_waypoints, v_vec)
+
     return ego_frame_waypoints
 
 

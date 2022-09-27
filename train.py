@@ -244,14 +244,23 @@ with skip_run('skip', 'regression_for_PI_controller') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     dataset = imitation_dataset.webdataset_data_iterator(cfg)
+    least_squares(dataset)
+
+with skip_run('skip', 'regression_for_PI_controller') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+
+    # Navigation type
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    dataset = imitation_dataset.webdataset_data_iterator(cfg)
     for data in dataset['training']:
         test = data[2].reshape(128, 2, 5).numpy()
-        print(data[2][0, :])
         for d in test:
             plt.scatter(d[0, :], d[1, :])
-            plt.pause(0.01)
-
-    least_squares(dataset)
+            plt.pause(0.000000001)
 
 with skip_run('skip', 'dataset_analysis') as check, check():
     # Load the configuration
@@ -436,7 +445,7 @@ with skip_run('skip', 'benchmark_trained_model') as check, check():
 
 with skip_run('skip', 'benchmark_trained_carnet_model') as check, check():
     # Load the configuration
-    cfg = yaml.load(open('configs/warmstart.yaml'), Loader=yaml.SafeLoader)
+    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
 
     # Experiment_config and experiment suite
     experiment_cfg = yaml.load(open('configs/experiments.yaml'), Loader=yaml.SafeLoader)
