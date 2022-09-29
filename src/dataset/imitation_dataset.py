@@ -64,7 +64,7 @@ def post_process_action(data, config):
     elif config['action_processing_id'] == 5:
         # Calculate theta near and theta far
         ego_frame_waypoints = calculate_ego_frame_waypoints(data)
-        points = ego_frame_waypoints[0:5, :].flatten('F').astype(np.float32)
+        points = ego_frame_waypoints[0:5, :].astype(np.float32)
         action = torch.from_numpy(points)
     else:
         action = torch.tensor([data['throttle'], data['steer'], data['brake']])

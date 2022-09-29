@@ -1,6 +1,6 @@
 ##-----------------------------------------------------#
 # Training parameters
-NUM_EPOCHS: 200
+NUM_EPOCHS: 100
 BATCH_SIZE: 128
 LEARNING_RATE: 0.0001
 DROP_OUT: 0.10
@@ -23,6 +23,9 @@ latent_size: 64
 layers_encoder: null
 layers_decoder: null
 hidden_size: 128
+gru_input_size: 2
+gru_hidden_size: 64
+n_waypoints: 5
 
 ##-----------------------------------------------------#
 # Other parameters

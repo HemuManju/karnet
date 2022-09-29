@@ -20,7 +20,13 @@ from src.data.stats import classification_accuracy
 from src.dataset import autoencoder_dataset, imitation_dataset, rnn_dataset
 from src.dataset.utils import WebDatasetReader
 
-from src.architectures.nets import CARNet, CNNAutoEncoder, CIRLCARNet, CIRLBasePolicy
+from src.architectures.nets import (
+    CARNet,
+    CNNAutoEncoder,
+    CIRLCARNet,
+    CIRLBasePolicy,
+    CIRLRegressorPolicy,
+)
 
 
 from src.models.regression import least_squares
@@ -234,6 +240,57 @@ with skip_run('skip', 'imitation_with_basenet') as check, check():
         )
     trainer.fit(model)
 
+with skip_run('skip', 'imitation_with_basenet_gru') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        monitor='losses/val_loss',
+        dirpath=cfg['logs_path'],
+        save_top_k=1,
+        filename=f'imitation_{navigation_type}',
+        mode='min',
+        save_last=True,
+    )
+    logger = pl.loggers.TensorBoardLogger(
+        cfg['logs_path'], name=f'imitation_{navigation_type}'
+    )
+
+    # Load the network
+    net = CIRLRegressorPolicy(cfg)
+    # output = net(net.example_input_array, net.example_command)
+
+    # Dataloader
+    data_loader = imitation_dataset.webdataset_data_iterator(cfg)
+    model = Imitation(cfg, net, data_loader)
+    if cfg['check_point_path'] is None:
+        trainer = pl.Trainer(
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=True,
+        )
+    else:
+        trainer = pl.Trainer(
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            resume_from_checkpoint=cfg['check_point_path'],
+            enable_progress_bar=False,
+        )
+    trainer.fit(model)
+
 with skip_run('skip', 'regression_for_PI_controller') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
@@ -261,6 +318,7 @@ with skip_run('skip', 'regression_for_PI_controller') as check, check():
         for d in test:
             plt.scatter(d[0, :], d[1, :])
             plt.pause(0.000000001)
+            plt.cla()
 
 with skip_run('skip', 'dataset_analysis') as check, check():
     # Load the configuration

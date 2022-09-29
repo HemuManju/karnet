@@ -205,6 +205,27 @@ class CNNAutoEncoder(pl.LightningModule):
         return reconstructed, embedding
 
 
+class MLP(pl.LightningModule):
+    def __init__(self, layer_size, output_size, dropout):
+        super(MLP, self).__init__()
+        self.output_size = output_size
+        self.layer_size = layer_size
+        self.dropout = dropout
+
+        self.mlp = nn.Sequential(
+            nn.LazyLinear(self.layer_size),
+            nn.ReLU(),
+            nn.Linear(self.layer_size, self.layer_size // 2),
+            nn.ReLU(),
+            nn.Linear(self.layer_size // 2, output_size),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        out = self.mlp(x)
+        return out
+
+
 class CARNet(pl.LightningModule):
     """
     Simple auto-encoder with MLP network
@@ -315,44 +336,14 @@ class BranchNet(pl.LightningModule):
     def __init__(self, output_size, dropout):
         super(BranchNet, self).__init__()
         self.output_size = output_size
-        self.layer_size = 256
+        self.layer_size = 512
         self.dropout = dropout
 
-        self.right_turn = nn.Sequential(
-            nn.LazyLinear(self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, output_size),
-            nn.ReLU(),
-        )
-
-        self.left_turn = nn.Sequential(
-            nn.LazyLinear(self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, output_size),
-            nn.ReLU(),
-        )
-
-        self.straight = nn.Sequential(
-            nn.LazyLinear(self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, output_size),
-            nn.ReLU(),
-        )
-
-        self.lane_follow = nn.Sequential(
-            nn.LazyLinear(self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, self.layer_size),
-            nn.ReLU(),
-            nn.Linear(self.layer_size, output_size),
-            nn.ReLU(),
-        )
+        # For brevity
+        self.right_turn = MLP(self.layer_size, output_size, dropout)
+        self.left_turn = MLP(self.layer_size, output_size, dropout)
+        self.straight = MLP(self.layer_size, output_size, dropout)
+        self.lane_follow = MLP(self.layer_size, output_size, dropout)
 
         self.branch = nn.ModuleList(
             [self.right_turn, self.left_turn, self.straight, self.lane_follow]
@@ -386,6 +377,106 @@ class CIRLBasePolicy(pl.LightningModule):
 
         self.back_bone_net = BaseConvNet(obs_size)
         self.action_net = BranchNet(output_size=n_actions, dropout=dropout)
+
+    def forward(self, x, command):
+        # Testing
+        # interactive_show_grid(x[0])
+        embedding = self.back_bone_net(x)
+        actions = self.action_net(embedding, command)
+        return actions
+
+
+class AutoRegressor(pl.LightningModule):
+    """
+    Simple auto-encoder with MLP network
+    Args:
+        seq_length: observation/state size of the environment
+        n_actions: number of discrete actions available in the environment
+        self.hidden_size: size of hidden layers
+    """
+
+    def __init__(self, hparams, latent_size, gru_hidden_size: int = 64):
+        super(AutoRegressor, self).__init__()
+
+        # Parameters
+        input_size = hparams['gru_input_size']
+        gru_hidden_size = hparams['gru_hidden_size']
+        self.n_waypoints = hparams['n_waypoints']
+
+        # Building blocks
+        self.gru = nn.GRUCell(input_size=input_size, hidden_size=gru_hidden_size)
+        self.output = nn.Linear(gru_hidden_size, 2)
+
+        self.mlp = MLP(latent_size, gru_hidden_size, dropout=0.0)
+
+    def forward(self, x):
+        hidden = self.mlp(x)
+        hidden = hidden[None, :]
+        output_wp = list()
+
+        # Initial input variable to GRU is always zero
+        gru_input = torch.zeros(size=(hidden.shape[0], 2), dtype=hidden.dtype).to(
+            self.device
+        )
+
+        # Autoregressive generation of output waypoints
+        for _ in range(self.n_waypoints):
+            hidden = self.gru(gru_input, hidden)
+            next_waypoint = self.output(hidden)
+            output_wp.append(next_waypoint)
+
+            # Next waypoint becomes the input for next iteration
+            gru_input = next_waypoint
+
+        pred_waypoints = torch.stack(output_wp, dim=1)
+
+        return pred_waypoints
+
+
+class AutoRegressorBranchNet(pl.LightningModule):
+    def __init__(self, dropout, hparams):
+        super(AutoRegressorBranchNet, self).__init__()
+        self.layer_size = 512
+        self.dropout = dropout
+
+        # For brevity
+        self.right_turn = AutoRegressor(hparams, self.layer_size)
+        self.left_turn = AutoRegressor(hparams, self.layer_size)
+        self.straight = AutoRegressor(hparams, self.layer_size)
+        self.lane_follow = AutoRegressor(hparams, self.layer_size)
+
+        self.branch = nn.ModuleList(
+            [self.right_turn, self.left_turn, self.straight, self.lane_follow]
+        )
+
+    def forward(self, x, command):
+        out = torch.cat(
+            [self.branch[i - 1](x_in) for x_in, i in zip(x, command.to(torch.int))]
+        )
+        return out
+
+
+class CIRLRegressorPolicy(pl.LightningModule):
+    """A simple convolution neural network"""
+
+    def __init__(self, model_config):
+        super(CIRLRegressorPolicy, self).__init__()
+
+        # Parameters
+        self.cfg = model_config
+        image_size = self.cfg['image_resize']
+        obs_size = self.cfg['obs_size']
+        n_actions = self.cfg['n_actions']
+        dropout = self.cfg['DROP_OUT']
+
+        # Example inputs
+        self.example_input_array = torch.randn(
+            (5, obs_size, image_size[1], image_size[2])
+        )
+        self.example_command = torch.tensor([1, 0, 2, 3, 1])
+
+        self.back_bone_net = BaseConvNet(obs_size)
+        self.action_net = AutoRegressorBranchNet(dropout=dropout, hparams=model_config)
 
     def forward(self, x, command):
         # Testing
