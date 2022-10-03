@@ -5,37 +5,15 @@ import webdataset as wds
 import torch
 import scipy.interpolate
 
-from .utils import get_preprocessing_pipeline, rotate, get_dataset_paths, generate_seqs
+from .utils import (
+    get_preprocessing_pipeline,
+    rotate,
+    get_dataset_paths,
+    generate_seqs,
+    find_in_between_angle,
+)
 
 import matplotlib.pyplot as plt
-
-
-def get_projections(x, on):
-    # Make the third dimension zero
-    on[2] = 0.0
-    x[2] = 0.0
-    proj = np.zeros((1, 2))
-    parallel = np.dot(x, on) / np.dot(on, on) * on
-    perpendicular = x - parallel
-
-    proj[0, 0] = -perpendicular[0]  # The directions are reversed in carla
-    proj[0, 1] = parallel[1]
-
-    # Find the rotation angle such the movement direction is always positive
-    if on[1] < 0:
-        theta = math.pi
-        R = np.array(
-            [[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]]
-        )
-        proj = R.dot(proj.T).flatten()
-    return proj
-
-
-def project_waypoints(waypoints, vector):
-    projected_waypoints = np.zeros((len(waypoints), 2))
-    for i, waypoint in enumerate(waypoints):
-        projected_waypoints[i, :] = get_projections(waypoint, vector)
-    return projected_waypoints
 
 
 def post_process_action(data, config):
@@ -62,8 +40,7 @@ def post_process_action(data, config):
         action = torch.tensor([theta_near, theta_middle, theta_far, data['steer']])
 
     elif config['action_processing_id'] == 5:
-        # Calculate theta near and theta far
-        ego_frame_waypoints = calculate_ego_frame_waypoints(data)
+        ego_frame_waypoints = project_to_ego_frame(data)
         points = ego_frame_waypoints[0:5, :].astype(np.float32)
         action = torch.from_numpy(points)
     else:
@@ -72,17 +49,49 @@ def post_process_action(data, config):
     return action
 
 
-def calculate_ego_frame_waypoints(data):
+def calc_ego_frame_projection(x, moving_direction):
+    theta = find_in_between_angle(moving_direction, np.array([0.0, 1.0, 0.0]))
+    projected = rotate(x[0:2].T, theta)
+    return projected
+
+
+def project_to_ego_frame(waypoints, data):
     # Direction vector
-    v_vec = np.array(data['moving_direction'])
+    moving_direction = np.array(data['moving_direction'])
 
     # Origin shift
-    shifted_waypoints = np.array(data['waypoints']) - np.array(data['location'])
+    shifted_waypoints = np.array(waypoints) - np.array(data['location'])
 
     # Projected points
-    ego_frame_waypoints = project_waypoints(shifted_waypoints, v_vec)
+    projected_waypoints = np.zeros((len(shifted_waypoints), 2))
+    for i, waypoint in enumerate(shifted_waypoints):
+        projected_waypoints[i, :] = calc_ego_frame_projection(
+            waypoint, moving_direction
+        )
+    return projected_waypoints
 
-    return ego_frame_waypoints
+
+def calc_world_projection(ego_frame_coord, moving_direction, ego_location):
+    #  Find the rotation angle such the movement direction is always positive
+    theta = find_in_between_angle(moving_direction, np.array([0.0, 1.0, 0.0]))
+
+    # Rotate the pointd back
+    re_projected = rotate(ego_frame_coord.T, -theta)
+    re_projected += ego_location
+    return re_projected
+
+
+def project_to_world(ego_frame_waypoints, data):
+    ego_location = np.array(data['location'])
+    v_vec = np.array(data['moving_direction'])
+
+    # Projected points
+    projected_waypoints = np.zeros((len(ego_frame_waypoints), 2))
+    for i, waypoint in enumerate(ego_frame_waypoints):
+        projected_waypoints[i, :] = calc_world_projection(
+            waypoint, v_vec, ego_location[0:2]
+        )
+    return projected_waypoints
 
 
 def calculate_angle(v0, v1):

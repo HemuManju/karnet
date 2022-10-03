@@ -3,10 +3,11 @@ import collections
 from pathlib import Path
 from itertools import islice, cycle, product
 
+import math
+
 import numpy as np
 
 import natsort
-
 
 import webdataset as wds
 import torch
@@ -94,8 +95,17 @@ def get_preprocessing_pipeline(config):
     return preproc
 
 
-def rotate(points, origin, angle):
-    return (points - origin) * np.exp(complex(0, angle)) + origin
+def find_in_between_angle(v, w):
+    theta = math.atan2(np.linalg.det([v[0:2], w[0:2]]), np.dot(v[0:2], w[0:2]))
+    return theta
+
+
+def rotate(points, angle):
+    R = np.array(
+        [[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]]
+    )
+    rotated = R.dot(points)
+    return rotated
 
 
 class WebDatasetReader:
