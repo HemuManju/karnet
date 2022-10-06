@@ -291,7 +291,7 @@ with skip_run('skip', 'imitation_with_basenet_gru') as check, check():
         )
     trainer.fit(model)
 
-with skip_run('skip', 'basenet_gru_validation') as check, check():
+with skip_run('run', 'basenet_gru_validation') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
@@ -306,7 +306,7 @@ with skip_run('skip', 'basenet_gru_validation') as check, check():
 
     # Load the network
     restore_config = {
-        'checkpoint_path': f'logs/2022-09-28/IMITATION/imitation_{navigation_type}.ckpt'
+        'checkpoint_path': f'logs/2022-10-05/IMITATION/imitation_{navigation_type}.ckpt'
     }
     model = Imitation.load_from_checkpoint(
         restore_config['checkpoint_path'],
@@ -317,48 +317,42 @@ with skip_run('skip', 'basenet_gru_validation') as check, check():
     model.eval()
 
     # Load the dataloader
-    data_loader = imitation_dataset.webdataset_data_iterator(cfg)
-    iterator = iter(data_loader['training'])
-    for i in range(1000):
-        images, commands, actions = next(iterator)
-        out = model(images, commands)
+    dataset = imitation_dataset.webdataset_data_test_iterator(
+        cfg,
+        file_path=f'/home/hemanth/Desktop/carla_data_new/Town01_NAVIGATION/{navigation_type}/Town01_HardRainNoon_cautious_000007.tar',
+    )
+
+    predicted_waypoints = []
+    true_waypoints = []
+    test = []
+    for i, data in enumerate(dataset):
+        images, commands, actions = data[0], data[1], data[2]
+        out = model(images.unsqueeze(0), torch.tensor(commands).unsqueeze(0))
         actions = actions.reshape(-1, 2).detach().numpy()
         out = out.reshape(-1, 2).detach().numpy()
 
-        plt.scatter(actions[:, 0], actions[:, 1], c='k')
-        plt.scatter(out[:, 0], out[:, 1], c='b')
-        plt.xlim([-12, 12])
-        plt.pause(0.1)
-        plt.cla()
+        # Waypoints from the data
+        test.append(data[3]['waypoints'])
 
-with skip_run('skip', 'regression_for_PI_controller') as check, check():
-    # Load the configuration
-    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+        # Project to the world
+        predicted = imitation_dataset.project_to_world_frame(out, data[3])
+        predicted_waypoints.append(predicted)
 
-    # Navigation type
-    navigation_type = cfg['navigation_types'][0]
-    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+        groud_truth = imitation_dataset.project_to_world_frame(actions, data[3])
+        true_waypoints.append(groud_truth)
 
-    dataset = imitation_dataset.webdataset_data_iterator(cfg)
-    least_squares(dataset)
+        if i > 1000:
+            break
 
-with skip_run('skip', 'regression_for_PI_controller') as check, check():
-    # Load the configuration
-    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+    true_waypoints = np.vstack(true_waypoints)
+    plt.scatter(true_waypoints[:, 0], true_waypoints[:, 1])
 
-    # Navigation type
-    navigation_type = cfg['navigation_types'][0]
-    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+    # test = np.array(sum(test, []))
+    # plt.scatter(test[:, 0], test[:, 1], s=10, marker='s')
 
-    dataset = imitation_dataset.webdataset_data_iterator(cfg)
-    for data in dataset['training']:
-        test = data[2].reshape(128, 2, 5).numpy()
-        for d in test:
-            plt.scatter(d[0, :], d[1, :])
-            plt.pause(0.000000001)
-            plt.cla()
+    pred_waypoints = np.vstack(predicted_waypoints)
+    plt.scatter(pred_waypoints[:, 0], pred_waypoints[:, 1])
+    plt.show()
 
 with skip_run('skip', 'dataset_analysis') as check, check():
     # Load the configuration
@@ -372,7 +366,7 @@ with skip_run('skip', 'dataset_analysis') as check, check():
     # Dataset reader
     reader = WebDatasetReader(
         cfg,
-        file_path='/home/hemanth/Desktop/carla_data_new/Town01_NAVIGATION/one_curve/Town01_HardRainNoon_cautious_000002.tar',
+        file_path=f'/home/hemanth/Desktop/carla_data_new/Town01_NAVIGATION/{navigation_type}/Town01_HardRainNoon_cautious_000002.tar',
     )
     dataset = reader.get_dataset(concat_n_samples=1)
     waypoint_data = []
@@ -384,8 +378,8 @@ with skip_run('skip', 'dataset_analysis') as check, check():
         data = data['json'][0]
         waypoints = data['waypoints']
         direction.append(np.array(data['moving_direction']))
-        projected_ego = imitation_dataset.project_to_ego_frame(waypoints, data)
-        projected_world = imitation_dataset.project_to_world(projected_ego, data)
+        projected_ego = imitation_dataset.project_to_ego_frame(data)
+        projected_world = imitation_dataset.project_to_world_frame(projected_ego, data)
         reprojected.append(projected_world)
         waypoint_data.append(waypoints)
         location.append(data['location'])
@@ -405,7 +399,7 @@ with skip_run('skip', 'dataset_analysis') as check, check():
     )
     plt.scatter(test_way[:, 0], test_way[:, 1])
     # plt.scatter(test_loc[:, 0], test_loc[:, 1], marker='s')
-    plt.scatter(reproj_test[:, 0], reproj_test[:, 1], marker='o')
+    plt.scatter(reproj_test[:, 0], reproj_test[:, 1], s=10, marker='s')
     plt.show()
 
 with skip_run('skip', 'imitation_with_carnet') as check, check():

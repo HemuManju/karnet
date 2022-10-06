@@ -13,7 +13,7 @@ except ModuleNotFoundError:
 
 from benchmark.agent import Agent
 
-from src.dataset.utils import get_preprocessing_pipeline
+from src.dataset.preprocessing import get_preprocessing_pipeline
 import matplotlib.pyplot as plt
 
 from .controller import VehiclePIDController, PIController

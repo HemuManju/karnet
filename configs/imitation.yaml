@@ -25,13 +25,13 @@ layers_decoder: null
 hidden_size: 128
 gru_input_size: 2
 gru_hidden_size: 64
-n_waypoints: 5
+n_waypoints: 2
 
 ##-----------------------------------------------------#
 # Other parameters
 image_size: [1, 256, 256]
-crop: False
-crop_image_resize: [1, 78, 128]
+crop: True
+crop_image_resize: [1, 64, 128]
 image_resize: [1, 128, 128]
 alpha: 0.75
 beta: 0.1
@@ -63,7 +63,7 @@ data_split:
 
 ##-----------------------------------------------------#
 # Path(s)
-raw_data_path: '/home/hemanth/Desktop/carla_data_new/Town01_NAVIGATION/'
+raw_data_path: '/home/hemanth/Desktop/carla_data/Town01_NAVIGATION/'
 # raw_data_path: '../carla_data/Town01_NAVIGATION/'
 logs_path: 'logs/'
 train_data_path: 'data/raw/train'

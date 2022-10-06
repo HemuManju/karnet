@@ -7,6 +7,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from pytorch_msssim import MS_SSIM
 
+from .utils import ChamferDistance
+
 
 class WeightedMSE(torch.nn.MSELoss):
     def __init__(self, weights=None):

@@ -5,7 +5,8 @@ import webdataset as wds
 import torch
 
 
-from .utils import get_preprocessing_pipeline, get_dataset_paths, generate_seqs
+from .preprocessing import get_preprocessing_pipeline
+from .utils import get_dataset_paths, generate_seqs
 
 import matplotlib.pyplot as plt
 

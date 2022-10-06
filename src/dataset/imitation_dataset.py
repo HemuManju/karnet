@@ -1,19 +1,19 @@
-import math
-
 import numpy as np
 import webdataset as wds
 import torch
 import scipy.interpolate
 
+import matplotlib.pyplot as plt
+
+from .preprocessing import get_preprocessing_pipeline
+
 from .utils import (
-    get_preprocessing_pipeline,
     rotate,
     get_dataset_paths,
     generate_seqs,
     find_in_between_angle,
+    show_image,
 )
-
-import matplotlib.pyplot as plt
 
 
 def post_process_action(data, config):
@@ -52,15 +52,16 @@ def post_process_action(data, config):
 def calc_ego_frame_projection(x, moving_direction):
     theta = find_in_between_angle(moving_direction, np.array([0.0, 1.0, 0.0]))
     projected = rotate(x[0:2].T, theta)
+    projected[0] *= -1
     return projected
 
 
-def project_to_ego_frame(waypoints, data):
+def project_to_ego_frame(data):
     # Direction vector
     moving_direction = np.array(data['moving_direction'])
 
     # Origin shift
-    shifted_waypoints = np.array(waypoints) - np.array(data['location'])
+    shifted_waypoints = np.array(data['waypoints']) - np.array(data['location'])
 
     # Projected points
     projected_waypoints = np.zeros((len(shifted_waypoints), 2))
@@ -72,6 +73,8 @@ def project_to_ego_frame(waypoints, data):
 
 
 def calc_world_projection(ego_frame_coord, moving_direction, ego_location):
+
+    ego_frame_coord[0] *= -1
     #  Find the rotation angle such the movement direction is always positive
     theta = find_in_between_angle(moving_direction, np.array([0.0, 1.0, 0.0]))
 
@@ -81,7 +84,7 @@ def calc_world_projection(ego_frame_coord, moving_direction, ego_location):
     return re_projected
 
 
-def project_to_world(ego_frame_waypoints, data):
+def project_to_world_frame(ego_frame_waypoints, data):
     ego_location = np.array(data['location'])
     v_vec = np.array(data['moving_direction'])
 
@@ -172,22 +175,15 @@ def concatenate_samples(samples, config):
         k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
     }
 
-    # Crop the image
-    if config['crop']:
-        crop_size = 256 - (2 * config['crop_image_resize'][1])
-        images = torch.stack(combined_data['jpeg'], dim=0)[:, :, crop_size:, :]
-
-        # Update image resize shape
-        config['image_resize'] = [
-            1,
-            config['crop_image_resize'][1],
-            config['crop_image_resize'][2],
-        ]
-    else:
-        images = torch.stack(combined_data['jpeg'], dim=0)
-
+    images = torch.stack(combined_data['jpeg'], dim=0)
     preproc = get_preprocessing_pipeline(config)
     images = preproc(images).squeeze(1)
+
+    # Crop the image
+    if config['crop']:
+        crop_size = config['image_resize'][1] - config['crop_image_resize'][1]
+        images = images[:, :crop_size, :]
+
     last_data = samples[-1]['json']
 
     if last_data['modified_direction'] in [-1, 5, 6]:
@@ -197,8 +193,52 @@ def concatenate_samples(samples, config):
 
     # Post processing according to the ID
     action = post_process_action(last_data, config)
+    n_waypoints = config['n_waypoints']
 
-    return images, command, action
+    return images, command, action[0:n_waypoints, :]
+
+
+def concatenate_test_samples(samples, config):
+    combined_data = {
+        k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
+    }
+
+    images = torch.stack(combined_data['jpeg'], dim=0)
+    preproc = get_preprocessing_pipeline(config)
+    images = preproc(images).squeeze(1)
+
+    # Crop the image
+    if config['crop']:
+        crop_size = config['image_resize'][1] - config['crop_image_resize'][1]
+        images = images[:, :crop_size, :]
+
+    last_data = samples[-1]['json']
+
+    if last_data['modified_direction'] in [-1, 5, 6]:
+        command = 4
+    else:
+        command = last_data['modified_direction']
+
+    # Post processing according to the ID
+    action = post_process_action(last_data, config)
+    n_waypoints = config['n_waypoints']
+
+    return images, command, action[0:n_waypoints, :], last_data
+
+
+def webdataset_data_test_iterator(config, file_path):
+    # Get dataset path(s)
+    paths = get_dataset_paths(config)
+
+    # Parameters
+    SEQ_LEN = config['obs_size']
+
+    dataset = (
+        wds.WebDataset(file_path, shardshuffle=False)
+        .decode("torchrgb")
+        .then(generate_seqs, concatenate_test_samples, SEQ_LEN, config)
+    )
+    return dataset
 
 
 def webdataset_data_iterator(config):

@@ -6,12 +6,19 @@ from itertools import islice, cycle, product
 import math
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import natsort
 
 import webdataset as wds
-import torch
-from torchvision import transforms
+
+
+def show_image(img):
+    # npimg = img.numpy()
+    # plt.imshow(np.transpose(npimg, (1, 2, 0)), origin='lower')
+    # plt.show()
+    plt.imshow(img, origin='lower', cmap='gray')
+    plt.show()
 
 
 def nested_dict():
@@ -78,21 +85,6 @@ def get_image_json_files(read_path):
     _, file_list = run_fast_scandir(read_path, [".json"])
     json_files = natsort.natsorted(file_list)
     return image_files, json_files
-
-
-def get_preprocessing_pipeline(config):
-
-    preproc = transforms.Compose(
-        [
-            transforms.Grayscale(),
-            transforms.Resize(
-                size=(config['image_resize'][1], config['image_resize'][2])
-            ),
-            # transforms.Normalize(mean=[0.5], std=[1.0]),
-            # transforms.ToTensor(),
-        ]
-    )
-    return preproc
 
 
 def find_in_between_angle(v, w):

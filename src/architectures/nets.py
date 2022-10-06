@@ -6,6 +6,8 @@ import torch.nn.functional as F
 
 from src.visualization.visualize import interactive_show_grid
 
+from .resnet import ResNet50, ResNet101, ResNet152
+
 from .layer_config import (
     layers_encoder_256_128,
     layers_decoder_256_128,
@@ -281,6 +283,18 @@ class CARNet(pl.LightningModule):
         return reconstructed, rnn_embeddings
 
 
+class BaseResNet(pl.LightningModule):
+    def __init__(self, obs_size):
+        super(BaseResNet, self).__init__()
+
+        # Architecture
+        self.resnet = ResNet50(output_size=512)
+
+    def forward(self, x):
+        x = self.resnet(x)
+        return x
+
+
 class BaseConvNet(pl.LightningModule):
     def __init__(self, obs_size):
         super(BaseConvNet, self).__init__()
@@ -475,7 +489,7 @@ class CIRLRegressorPolicy(pl.LightningModule):
         )
         self.example_command = torch.tensor([1, 0, 2, 3, 1])
 
-        self.back_bone_net = BaseConvNet(obs_size)
+        self.back_bone_net = BaseResNet(obs_size)
         self.action_net = AutoRegressorBranchNet(dropout=dropout, hparams=model_config)
 
     def forward(self, x, command):
