@@ -18,21 +18,21 @@ from src.data.create_data import create_regression_data
 from src.data.stats import classification_accuracy
 
 from src.dataset import autoencoder_dataset, imitation_dataset, rnn_dataset
-from src.dataset.utils import WebDatasetReader
+from src.dataset.utils import WebDatasetReader, show_image
 
 from src.architectures.nets import (
     CARNet,
     CNNAutoEncoder,
+    ResNetAutoencoder,
     CIRLCARNet,
     CIRLBasePolicy,
     CIRLRegressorPolicy,
 )
 
 
-from src.models.regression import least_squares
 from src.models.imitation import Imitation, Autoencoder
 from src.models.utils import load_checkpoint, number_parameters
-from src.evaluate.agents import CILAgent, PIThetaNeaFarAgent
+from src.evaluate.agents import CILAgent
 from src.evaluate.experiments import CORL2017
 
 from benchmark.run_benchmark import Benchmarking
@@ -68,30 +68,26 @@ with skip_run('skip', 'carnet_autoencoder_training') as check, check():
     logger = pl.loggers.TensorBoardLogger(cfg['logs_path'], name=f'autoencoder')
 
     # Setup
-    net = CNNAutoEncoder(cfg)
-    # net(net.example_input_array)
+    net = ResNetAutoencoder(cfg)
 
     # Dataloader
     data_loader = autoencoder_dataset.webdataset_data_iterator(cfg)
     model = Autoencoder(cfg, net, data_loader)
 
     if cfg['check_point_path'] is None:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            enable_progress_bar=True,
-        )
+        model = Autoencoder(cfg, net, data_loader)
     else:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            resume_from_checkpoint=cfg['check_point_path'],
-            enable_progress_bar=False,
+        model = Autoencoder.load_from_checkpoint(
+            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
         )
+    # Trainer
+    trainer = pl.Trainer(
+        gpus=gpus,
+        max_epochs=cfg['NUM_EPOCHS'],
+        logger=logger,
+        callbacks=[checkpoint_callback],
+        enable_progress_bar=True,
+    )
     trainer.fit(model)
 
 with skip_run('skip', 'verify_autoencoder') as check, check():
@@ -108,34 +104,23 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Setup
-    read_path = f'logs/2022-08-29/AUTOENCODER/autoencoder.ckpt'
+    read_path = f'logs/2022-10-08/AUTOENCODER/autoencoder.ckpt'
     net = CNNAutoEncoder(cfg)
-    net = load_checkpoint(net, checkpoint_path=read_path)
-    net.eval()
-    # net(net.example_input_array)
-
     # Dataloader
     data_loader = autoencoder_dataset.webdataset_data_iterator(cfg)
+    model = Autoencoder.load_from_checkpoint(
+        read_path, hparams=cfg, net=net, data_loader=data_loader,
+    )
+    model.eval()
 
     for x, y in data_loader['training']:
-        net.eval()
-        reconstructured, embeddings = net(x)
-        input_test = x[0].detach().cpu().numpy()
-        input_test = np.rot90(np.swapaxes(input_test, 2, 0))
-        plt.imshow(input_test, origin='lower')
-        plt.show()
-
-        input_test = y[0].detach().cpu().numpy()
-        input_test = np.rot90(np.swapaxes(input_test, 2, 0))
-        plt.imshow(input_test, origin='lower')
-        plt.show()
-
-        test = reconstructured[0].detach().cpu().numpy()
-        test = np.rot90(np.swapaxes(test, 2, 0))
-        plt.imshow(test, origin='lower')
-        plt.show()
-
-        break
+        model.eval()
+        with torch.no_grad():
+            reconstructured, embeddings = net(x)
+            print(x.shape)
+            show_image(x[0])
+            show_image(reconstructured[0])
+        # break
 
 with skip_run('skip', 'carnet_training') as check, check():
     # Load the configuration
@@ -171,188 +156,20 @@ with skip_run('skip', 'carnet_training') as check, check():
     data_loader = rnn_dataset.webdataset_data_iterator(cfg)
     model = Autoencoder(cfg, net, data_loader)
     if cfg['check_point_path'] is None:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            enable_progress_bar=True,
-        )
+        model = Autoencoder(cfg, net, data_loader)
     else:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            resume_from_checkpoint=cfg['check_point_path'],
-            enable_progress_bar=False,
+        model = Autoencoder.load_from_checkpoint(
+            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
         )
+    # Trainer
+    trainer = pl.Trainer(
+        gpus=gpus,
+        max_epochs=cfg['NUM_EPOCHS'],
+        logger=logger,
+        callbacks=[checkpoint_callback],
+        enable_progress_bar=False,
+    )
     trainer.fit(model)
-
-with skip_run('skip', 'imitation_with_basenet') as check, check():
-    # Load the configuration
-    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
-
-    # Random seed
-    gpus = get_num_gpus()
-    torch.manual_seed(cfg['pytorch_seed'])
-
-    # Checkpoint
-    navigation_type = cfg['navigation_types'][0]
-    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
-
-    checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        monitor='losses/val_loss',
-        dirpath=cfg['logs_path'],
-        save_top_k=1,
-        filename=f'imitation_{navigation_type}',
-        mode='min',
-        save_last=True,
-    )
-    logger = pl.loggers.TensorBoardLogger(
-        cfg['logs_path'], name=f'imitation_{navigation_type}'
-    )
-
-    # Load the network
-    net = CIRLBasePolicy(cfg)
-    # output = net(net.example_input_array, net.example_command)
-
-    # Dataloader
-    data_loader = imitation_dataset.webdataset_data_iterator(cfg)
-    model = Imitation(cfg, net, data_loader)
-    if cfg['check_point_path'] is None:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            enable_progress_bar=True,
-        )
-    else:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            resume_from_checkpoint=cfg['check_point_path'],
-            enable_progress_bar=False,
-        )
-    trainer.fit(model)
-
-with skip_run('skip', 'imitation_with_basenet_gru') as check, check():
-    # Load the configuration
-    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
-
-    # Random seed
-    gpus = get_num_gpus()
-    torch.manual_seed(cfg['pytorch_seed'])
-
-    # Checkpoint
-    navigation_type = cfg['navigation_types'][0]
-    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
-
-    checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        monitor='losses/val_loss',
-        dirpath=cfg['logs_path'],
-        save_top_k=1,
-        filename=f'imitation_{navigation_type}',
-        mode='min',
-        save_last=True,
-    )
-    logger = pl.loggers.TensorBoardLogger(
-        cfg['logs_path'], name=f'imitation_{navigation_type}'
-    )
-
-    # Load the network
-    net = CIRLRegressorPolicy(cfg)
-    # output = net(net.example_input_array, net.example_command)
-
-    # Dataloader
-    data_loader = imitation_dataset.webdataset_data_iterator(cfg)
-    model = Imitation(cfg, net, data_loader)
-    if cfg['check_point_path'] is None:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            enable_progress_bar=True,
-        )
-    else:
-        trainer = pl.Trainer(
-            gpus=gpus,
-            max_epochs=cfg['NUM_EPOCHS'],
-            logger=logger,
-            callbacks=[checkpoint_callback],
-            resume_from_checkpoint=cfg['check_point_path'],
-            enable_progress_bar=False,
-        )
-    trainer.fit(model)
-
-with skip_run('run', 'basenet_gru_validation') as check, check():
-    # Load the configuration
-    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
-
-    # Random seed
-    gpus = get_num_gpus()
-    torch.manual_seed(cfg['pytorch_seed'])
-
-    # Checkpoint
-    navigation_type = cfg['navigation_types'][0]
-    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
-
-    # Load the network
-    restore_config = {
-        'checkpoint_path': f'logs/2022-10-05/IMITATION/imitation_{navigation_type}.ckpt'
-    }
-    model = Imitation.load_from_checkpoint(
-        restore_config['checkpoint_path'],
-        hparams=cfg,
-        net=CIRLRegressorPolicy(cfg),
-        data_loader=None,
-    )
-    model.eval()
-
-    # Load the dataloader
-    dataset = imitation_dataset.webdataset_data_test_iterator(
-        cfg,
-        file_path=f'/home/hemanth/Desktop/carla_data_new/Town01_NAVIGATION/{navigation_type}/Town01_HardRainNoon_cautious_000007.tar',
-    )
-
-    predicted_waypoints = []
-    true_waypoints = []
-    test = []
-    for i, data in enumerate(dataset):
-        images, commands, actions = data[0], data[1], data[2]
-        out = model(images.unsqueeze(0), torch.tensor(commands).unsqueeze(0))
-        actions = actions.reshape(-1, 2).detach().numpy()
-        out = out.reshape(-1, 2).detach().numpy()
-
-        # Waypoints from the data
-        test.append(data[3]['waypoints'])
-
-        # Project to the world
-        predicted = imitation_dataset.project_to_world_frame(out, data[3])
-        predicted_waypoints.append(predicted)
-
-        groud_truth = imitation_dataset.project_to_world_frame(actions, data[3])
-        true_waypoints.append(groud_truth)
-
-        if i > 1000:
-            break
-
-    true_waypoints = np.vstack(true_waypoints)
-    plt.scatter(true_waypoints[:, 0], true_waypoints[:, 1])
-
-    # test = np.array(sum(test, []))
-    # plt.scatter(test[:, 0], test[:, 1], s=10, marker='s')
-
-    pred_waypoints = np.vstack(predicted_waypoints)
-    plt.scatter(pred_waypoints[:, 0], pred_waypoints[:, 1])
-    plt.show()
 
 with skip_run('skip', 'dataset_analysis') as check, check():
     # Load the configuration
@@ -464,48 +281,6 @@ with skip_run('skip', 'imitation_with_carnet') as check, check():
             enable_progress_bar=False,
         )
     trainer.fit(model)
-
-with skip_run('skip', 'theta_estimation') as check, check():
-    # Load the configuration
-    cfg = yaml.load(open('configs/warmstart.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/WARMSTART'
-
-    # Random seed
-    gpus = get_num_gpus()
-    torch.manual_seed(cfg['pytorch_seed'])
-
-    # Checkpoint
-    navigation_type = cfg['navigation_types'][0]
-    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
-
-    # Dataloader
-    data_loader = imitation_dataset.webdataset_data_iterator(cfg)
-
-    t_near = []
-    t_far = []
-    t_middle = []
-    for i, data in enumerate(data_loader['training']):
-        t_near.append(data[2][:, 0].numpy().tolist())
-        t_middle.append(data[2][:, 1].numpy().tolist())
-        t_far.append(data[2][:, 2].numpy().tolist())
-        if i > 100:
-            break
-
-    t_near = sum(t_near, [])
-    t_middle = sum(t_middle, [])
-    t_far = sum(t_far, [])
-
-    plt.hist(np.array(t_near), bins=10)
-    plt.hist(np.array(t_middle), bins=10)
-    plt.hist(np.array(t_far), bins=10)
-
-    # plt.plot(np.array(t_far), 'o')
-    # plt.plot(np.array(t_middle), 's')
-    # plt.plot(np.array(t_near), '.')
-
-    print(np.max(np.array(t_far)))
-    print(np.min(np.array(t_far)))
-    plt.show()
 
 with skip_run('skip', 'benchmark_trained_model') as check, check():
     # Load the configuration

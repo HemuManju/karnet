@@ -3,9 +3,7 @@ import torch
 
 
 from .preprocessing import get_preprocessing_pipeline
-from .utils import get_dataset_paths, generate_seqs
-
-import matplotlib.pyplot as plt
+from .utils import get_dataset_paths, generate_seqs, show_image
 
 
 def concatenate_samples(samples, config):
@@ -13,24 +11,14 @@ def concatenate_samples(samples, config):
         k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
     }
 
-    # Crop the image
-    if config['crop']:
-        crop_size = 256 - (2 * config['crop_image_resize'][1])
-        images = torch.stack(combined_data['jpeg'], dim=0)[:, :, crop_size:, :]
-
-        # Update image resize shape
-        config['image_resize'] = [
-            1,
-            config['crop_image_resize'][1],
-            config['crop_image_resize'][2],
-        ]
-
-    else:
-        images = torch.stack(combined_data['jpeg'], dim=0)
-
-    # Preprocessing
+    images = torch.stack(combined_data['jpeg'], dim=0)
     preproc = get_preprocessing_pipeline(config)
     images = preproc(images)
+
+    # Crop the image
+    if config['crop']:
+        crop_size = config['image_resize'][1] - config['crop_image_resize'][1]
+        images = images[:, :, :crop_size, :]
 
     # Convert the sequence to input and output
     input_seq = images[0, :, :, :]
@@ -46,7 +34,7 @@ def webdataset_data_iterator(config):
 
     # Parameter(s)
     BATCH_SIZE = config['BATCH_SIZE']
-    SEQ_LEN = 1
+    SEQ_LEN = 1  # We are just reconstructing the image
     number_workers = config['number_workers']
 
     # Create train, validation, test datasets and save them in a dictionary

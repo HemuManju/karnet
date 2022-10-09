@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from pytorch_msssim import MS_SSIM
 
-from .utils import ChamferDistance
+from .utils import ChamferDistance, calc_ssim_kernel_size
 
 
 class WeightedMSE(torch.nn.MSELoss):
@@ -43,7 +43,9 @@ class Autoencoder(pl.LightningModule):
 
         # Predict and calculate loss
         output, embedding = self.forward(x)
-        criterion = MS_SSIM(data_range=1, size_average=True, channel=1)
+
+        k = calc_ssim_kernel_size(self.h_params['image_resize'], levels=5)
+        criterion = MS_SSIM(win_size=k, data_range=1, size_average=True, channel=1)
 
         loss = 1.0 - criterion(output, y)
 
@@ -55,7 +57,10 @@ class Autoencoder(pl.LightningModule):
 
         # Predict and calculate loss
         output, embedding = self.forward(x)
-        criterion = MS_SSIM(data_range=1, size_average=True, channel=1)
+
+        k = calc_ssim_kernel_size(self.h_params['image_resize'], levels=5)
+        criterion = MS_SSIM(win_size=k, data_range=1, size_average=True, channel=1)
+
         loss = 1.0 - criterion(output, y)
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
@@ -80,7 +85,7 @@ class Autoencoder(pl.LightningModule):
             'monitor': 'losses/val_loss',
         }
 
-        if self.h_params['check_point_path'] is None:
+        if self.h_params['use_scheduler']:
             return [optimizer], [scheduler]
         else:
             return [optimizer]
@@ -143,7 +148,7 @@ class Imitation(pl.LightningModule):
             'monitor': 'losses/val_loss',
         }
 
-        if self.h_params['check_point_path'] is None:
+        if self.h_params['use_scheduler']:
             return [optimizer], [scheduler]
         else:
             return [optimizer]

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from src.visualization.visualize import interactive_show_grid
 
-from .resnet import ResNet50, ResNet101, ResNet152
+from .resnet import SimpleResNet, ResNetDec, ResNetEnc
 
 from .layer_config import (
     layers_encoder_256_128,
@@ -16,6 +16,9 @@ from .layer_config import (
     layers_encoder_256_256,
     layers_decoder_256_256,
 )
+
+from .layer_config_modified import layers_decoder_128, layers_encoder_128
+
 from .utils import build_conv_model, build_deconv_model, Flatten, get_model
 
 
@@ -145,6 +148,34 @@ class VAE(pl.LightningModule):
         return reconst, mu, log_sigma
 
 
+class ResNetAutoencoder(pl.LightningModule):
+    def __init__(self, hparams, latent_size: int = 128):
+        super(ResNetAutoencoder, self).__init__()
+
+        image_size = hparams['image_resize']
+        latent_size = hparams['latent_size']
+
+        # Example image
+        self.example_input_array = torch.randn((2, *image_size))
+
+        self.encoder = ResNetEnc(config=hparams, z_dim=latent_size)
+        self.decoder = ResNetDec(config=hparams, z_dim=latent_size)
+
+    def encode(self, x):
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        return x
+
+    def decode(self, x):
+        reconstructed = self.decoder(x)
+        return reconstructed
+
+    def forward(self, x):
+        embedding = self.encode(x)
+        reconstructed = self.decode(embedding)
+        return reconstructed, embedding
+
+
 class CNNAutoEncoder(pl.LightningModule):
     """
     Simple auto-encoder with MLP network
@@ -178,8 +209,8 @@ class CNNAutoEncoder(pl.LightningModule):
             }
         elif latent_size == 128:
             hparams["autoencoder_config"] = {
-                "layers_encoder": layers_encoder_256_128,
-                "layers_decoder": layers_decoder_256_128,
+                "layers_encoder": layers_encoder_128,
+                "layers_decoder": layers_decoder_128,
             }
         elif latent_size == 256:
             hparams["autoencoder_config"] = {
@@ -288,7 +319,7 @@ class BaseResNet(pl.LightningModule):
         super(BaseResNet, self).__init__()
 
         # Architecture
-        self.resnet = ResNet50(output_size=512)
+        self.resnet = SimpleResNet(output_size=512)
 
     def forward(self, x):
         x = self.resnet(x)

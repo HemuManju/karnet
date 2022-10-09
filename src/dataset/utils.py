@@ -14,10 +14,8 @@ import webdataset as wds
 
 
 def show_image(img):
-    # npimg = img.numpy()
-    # plt.imshow(np.transpose(npimg, (1, 2, 0)), origin='lower')
-    # plt.show()
-    plt.imshow(img, origin='lower', cmap='gray')
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg, (1, 2, 0)), origin='lower', cmap='gray')
     plt.show()
 
 

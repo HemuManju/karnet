@@ -5,6 +5,8 @@ import subprocess
 import time
 import psutil
 
+import math
+
 import collections
 
 try:
@@ -14,6 +16,11 @@ except ModuleNotFoundError:
 
 import torch
 import torch.nn as nn
+
+
+def calc_ssim_kernel_size(image_shape, levels):
+    k = math.floor((image_shape[1] - 1) / 2 ** (levels - 1) + 1)
+    return k - 1 if k % 2 == 0 else k
 
 
 def train(model, data_loader, optimizer, criterion, device=None):
@@ -257,3 +264,4 @@ class ChamferDistance(nn.Module):
 
         distance = min_for_each_x_i.sum(1) + min_for_each_y_j.sum(1)  # shape [b]
         return distance.mean(0)
+
