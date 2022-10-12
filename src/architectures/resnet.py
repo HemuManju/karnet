@@ -315,6 +315,7 @@ class ResNetDec(nn.Module):
         self.config = config
 
         self.in_channels = 128
+        n_classes = config['n_classes']
 
         self.latent_size = config['latent_size']
         self.image_size = config['image_resize']
@@ -324,23 +325,13 @@ class ResNetDec(nn.Module):
         self.layer4 = self._make_layer(BasicBlockDecoder, num_blocks[3], 128, stride=2)
         self.layer3 = self._make_layer(BasicBlockDecoder, num_blocks[2], 64, stride=1)
         self.layer2 = self._make_layer(BasicBlockDecoder, num_blocks[1], 32, stride=1)
-        self.layer1 = self._make_layer(BasicBlockDecoder, num_blocks[0], 1, stride=1)
+        self.layer1 = self._make_layer(
+            BasicBlockDecoder, num_blocks[0], n_classes, stride=1
+        )
         self.sigmoid = nn.Sigmoid()
 
     def _make_layer(self, ResBlock, blocks, planes, stride):
         layers = []
-
-        if stride != 1 or self.in_channels != planes * ResBlock.expansion:
-            downsample_func = nn.Sequential(
-                nn.Conv2d(
-                    self.in_channels,
-                    planes * ResBlock.expansion,
-                    kernel_size=1,
-                    stride=stride,
-                ),
-                nn.BatchNorm2d(planes * ResBlock.expansion),
-            )
-
         layers.append(ResBlock(self.in_channels, planes, stride=stride))
         self.in_channels = planes * ResBlock.expansion
 
@@ -355,10 +346,8 @@ class ResNetDec(nn.Module):
         x = self.layer4(x)
         x = self.layer3(x)
         x = self.layer2(x)
-        x = self.layer1(x)
-        reconstructed = self.sigmoid(x)
-        # reconstructed = x.view(x.size(0), *self.image_size)
-        return reconstructed
+        out = self.layer1(x)
+        return out
 
 
 def SimpleResNet(output_size, channels=1):

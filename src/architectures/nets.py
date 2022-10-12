@@ -148,7 +148,7 @@ class VAE(pl.LightningModule):
         return reconst, mu, log_sigma
 
 
-class ResNetAutoencoder(pl.LightningModule):
+class ResNetAutoencoder(nn.Module):
     def __init__(self, hparams, latent_size: int = 128):
         super(ResNetAutoencoder, self).__init__()
 

@@ -1,7 +1,7 @@
 ##-----------------------------------------------------#
 # Training parameters
 NUM_EPOCHS: 100
-BATCH_SIZE: 128
+BATCH_SIZE: 64
 LEARNING_RATE: 0.001
 DROP_OUT: 0.10
 TEST_SIZE: 0.15
@@ -9,9 +9,10 @@ VALID_SIZE: 0.15
 
 ##-----------------------------------------------------#
 # Data Parameters
-seq_length: 2
-predict_length: 1
+seq_length: 1
+predict_length: 0
 n_actions: 3
+n_classes: 23
 frame_skip: 4
 number_workers: 12
 
@@ -33,14 +34,14 @@ use_scheduler: False
 
 ##-----------------------------------------------------#
 # Data splitting scheme
-navigation_types: ['navigation'] # 'straight', , 'navigation'
+navigation_types: ['one_curve'] # 'straight', , 'navigation'
 data_split:
   training:
     town: ['Town01']
     season: [
         'ClearNoon',
         # 'HardRainNoon', # Testing
-        'ClearSunset',
+        # 'ClearSunset', # Testing
         'MidRainSunset',
         'SoftRainNoon',
         'SoftRainSunset',
@@ -48,7 +49,7 @@ data_split:
     behavior: ['cautious']
   validation:
     town: ['Town01']
-    season: ['HardRainNoon']
+    season: ['MidRainSunset']
     behavior: ['cautious']
   testing:
     town: []

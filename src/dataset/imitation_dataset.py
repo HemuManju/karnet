@@ -170,7 +170,7 @@ def calculate_theta_near_far(waypoints, location):
     return float(theta_near), float(theta_middle), float(theta_far)
 
 
-def concatenate_samples(samples, config):
+def process_samples(samples, config):
     combined_data = {
         k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
     }
@@ -258,7 +258,7 @@ def webdataset_data_iterator(config):
             dataset = (
                 wds.WebDataset(path, shardshuffle=False)
                 .decode("torchrgb")
-                .then(generate_seqs, concatenate_samples, SEQ_LEN, config)
+                .then(generate_seqs, process_samples, SEQ_LEN, config)
             )
             data_loader = wds.WebLoader(
                 dataset,
