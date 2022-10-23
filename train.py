@@ -19,7 +19,12 @@ from src.data.stats import classification_accuracy
 
 from src.dataset.sample_processors import one_image_samples, rnn_samples, semseg_samples
 from src.dataset import imitation_dataset
-from src.dataset.utils import WebDatasetReader, show_image, get_webdataset_data_iterator
+from src.dataset.utils import (
+    WebDatasetReader,
+    show_image,
+    get_webdataset_data_iterator,
+    labels_to_cityscapes_palette,
+)
 
 from src.architectures.nets import (
     CARNet,
@@ -27,12 +32,13 @@ from src.architectures.nets import (
     ResNetAutoencoder,
     CIRLCARNet,
     CIRLBasePolicy,
+    ResCARNet,
     CIRLRegressorPolicy,
 )
 
 
 from src.models.imitation import Imitation
-from src.models.encoding import Autoencoder, SemanticSegmentation
+from src.models.encoding import Autoencoder, SemanticSegmentation, RNNSegmentation
 from src.models.utils import load_checkpoint, number_parameters
 from src.evaluate.agents import CILAgent
 from src.evaluate.experiments import CORL2017
@@ -112,11 +118,11 @@ with skip_run('skip', 'carnet_semseg_training') as check, check():
         monitor='losses/val_loss',
         dirpath=cfg['logs_path'],
         save_top_k=1,
-        filename=f'autoencoder',
+        filename=f'segmentation',
         mode='min',
         save_last=True,
     )
-    logger = pl.loggers.TensorBoardLogger(cfg['logs_path'], name=f'autoencoder')
+    logger = pl.loggers.TensorBoardLogger(cfg['logs_path'], name=f'segmentation')
 
     # Setup
     net = ResNetAutoencoder(cfg)
@@ -137,7 +143,7 @@ with skip_run('skip', 'carnet_semseg_training') as check, check():
         max_epochs=cfg['NUM_EPOCHS'],
         logger=logger,
         callbacks=[checkpoint_callback],
-        enable_progress_bar=True,
+        enable_progress_bar=False,
     )
     trainer.fit(model)
 
@@ -155,12 +161,12 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Setup
-    read_path = f'logs/2022-10-09/AUTOENCODER/autoencoder.ckpt'
+    read_path = f'logs/2022-10-12/AUTOENCODER/segmentation.ckpt'
     net = ResNetAutoencoder(cfg)
 
     # Dataloader
-    data_loader = autoencoder_dataset.webdataset_data_iterator(cfg)
-    model = Autoencoder.load_from_checkpoint(
+    data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
+    model = SemanticSegmentation.load_from_checkpoint(
         read_path, hparams=cfg, net=net, data_loader=data_loader,
     )
     model.eval()
@@ -172,6 +178,38 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
             print(x.shape)
             show_image(x[0])
             show_image(reconstructured[0])
+
+with skip_run('skip', 'verify_segmentation') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/autoencoder.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/AUTOENCODER'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    # Setup
+    read_path = f'logs/2022-10-15/SEGMENTATION/segmentation.ckpt'
+    net = ResNetAutoencoder(cfg)
+
+    # Dataloader
+    data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
+    model = SemanticSegmentation.load_from_checkpoint(
+        read_path, hparams=cfg, net=net, data_loader=data_loader,
+    )
+    model.eval()
+
+    for x, y in data_loader['training']:
+        model.eval()
+        with torch.no_grad():
+            reconstructured, embeddings = net(x)
+            show_image(x[0])
+            labels = torch.argmax(reconstructured[0], dim=0)
+            show_image(labels_to_cityscapes_palette(labels))
 
 with skip_run('skip', 'carnet_training') as check, check():
     # Load the configuration
@@ -204,12 +242,67 @@ with skip_run('skip', 'carnet_training') as check, check():
     # net(net.example_input_array)
 
     # Dataloader
-    data_loader = rnn_dataset.webdataset_data_iterator(cfg)
+    data_loader = get_webdataset_data_iterator(cfg, rnn_samples())
     model = Autoencoder(cfg, net, data_loader)
     if cfg['check_point_path'] is None:
         model = Autoencoder(cfg, net, data_loader)
     else:
         model = Autoencoder.load_from_checkpoint(
+            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+        )
+    # Trainer
+    trainer = pl.Trainer(
+        gpus=gpus,
+        max_epochs=cfg['NUM_EPOCHS'],
+        logger=logger,
+        callbacks=[checkpoint_callback],
+        enable_progress_bar=False,
+    )
+    trainer.fit(model)
+
+with skip_run('skip', 'rescarnet_training') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/RNN_SEGMENTATION'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Add navigation type
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        monitor='losses/val_loss',
+        dirpath=cfg['logs_path'],
+        save_top_k=1,
+        filename=f'rnn_segmentation_{navigation_type}',
+        mode='min',
+        save_last=True,
+    )
+    logger = pl.loggers.TensorBoardLogger(
+        cfg['logs_path'], name=f'rnn_segmentation_{navigation_type}'
+    )
+
+    # Setup the networks
+    res_autoencoder = ResNetAutoencoder(cfg)
+    read_path = 'logs/2022-10-15/SEGMENTATION/segmentation.ckpt'
+    res_autoencoder = load_checkpoint(res_autoencoder, read_path)
+
+    net = ResCARNet(cfg, res_autoencoder)
+    # net(net.example_input_array)
+
+    # Dataloader
+    data_loader = get_webdataset_data_iterator(cfg, rnn_samples)
+    model = RNNSegmentation(cfg, net, data_loader)
+
+    if cfg['check_point_path'] is None:
+        model = RNNSegmentation(cfg, net, data_loader)
+    else:
+        model = SemanticSegmentation.load_from_checkpoint(
             cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
         )
     # Trainer
@@ -236,7 +329,7 @@ with skip_run('skip', 'test_loss_function') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Data loader
-    data_loader = autoencoder_dataset.webdataset_data_iterator(cfg)
+    data_loader = get_webdataset_data_iterator(cfg, one_image_samples)
 
     for x, y in data_loader['training']:
         show_image(x[0, ...])
@@ -500,7 +593,7 @@ with skip_run('skip', 'benchmark_trained_model') as check, check():
     torch.manual_seed(cfg['pytorch_seed'])
 
     # Dataloader
-    data_loader = rnn_dataset.webdataset_data_iterator(cfg)
+    data_loader = get_webdataset_data_iterator(cfg, rnn_samples)
 
     for data in data_loader['training']:
         output = model(data[0][0:1], data[1][0:1])

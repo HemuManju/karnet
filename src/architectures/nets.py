@@ -259,6 +259,63 @@ class MLP(pl.LightningModule):
         return out
 
 
+class ResCARNet(pl.LightningModule):
+    """
+    Simple auto-encoder with MLP network
+    Args:
+        seq_length: observation/state size of the environment
+        n_actions: number of discrete actions available in the environment
+        self.hidden_size: size of hidden layers
+    """
+
+    def __init__(self, hparams, res_autoencoder):
+        super(ResCARNet, self).__init__()
+
+        # Parameters
+        image_size = hparams['image_resize']
+        self.example_input_array = torch.randn((2, 4, *image_size))
+
+        # Encoder and decoder
+        self.res_autoencoder = res_autoencoder
+
+        # RNN
+        rnn_input_size = hparams['rnn_input_size']
+        latent_size = hparams['latent_size']
+        hidden_size = hparams['hidden_size']
+        self.n_classes = hparams['n_classes']
+        self.rnn = nn.GRU(
+            input_size=rnn_input_size,
+            hidden_size=hidden_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.linear = nn.LazyLinear(latent_size)
+
+    def forward(self, x):
+        batch_size, timesteps, C, H, W = x.size()
+        # Encoder
+        embeddings = self.res_autoencoder.encode(
+            x.view(batch_size * timesteps, C, H, W)
+        )
+
+        # RNN logic
+        r_in = embeddings.view(batch_size, timesteps, -1)
+        r_out, hidden = self.rnn(r_in)
+        rnn_embeddings = r_out.contiguous()
+
+        # Linear layer after RNN
+        decode_input = self.linear(rnn_embeddings.view(batch_size * timesteps, -1))
+
+        # Decoder
+        reconstructed = self.res_autoencoder.decode(decode_input)
+        reconstructed = reconstructed.view(batch_size, timesteps, self.n_classes, H, W)
+
+        # For cross entropy the size should be [batch_size, n_clases, sequence_length, H, W]
+        reconstructed = reconstructed.permute(0, 2, 1, 3, 4)
+
+        return reconstructed, rnn_embeddings
+
+
 class CARNet(pl.LightningModule):
     """
     Simple auto-encoder with MLP network

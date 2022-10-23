@@ -34,15 +34,15 @@ use_scheduler: False
 
 ##-----------------------------------------------------#
 # Data splitting scheme
-navigation_types: ['one_curve'] # 'straight', , 'navigation'
+navigation_types: ['navigation'] # 'straight', , 'navigation'
 data_split:
   training:
     town: ['Town01']
     season: [
-        'ClearNoon',
+        # 'ClearNoon',
         # 'HardRainNoon', # Testing
         # 'ClearSunset', # Testing
-        'MidRainSunset',
+        # 'MidRainSunset', # Testing
         'SoftRainNoon',
         'SoftRainSunset',
       ]

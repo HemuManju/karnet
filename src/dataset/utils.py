@@ -8,6 +8,8 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
+from torchvision import transforms
+
 import natsort
 
 import webdataset as wds
@@ -48,9 +50,36 @@ def get_webdataset_data_iterator(config, sample_processors):
     return data_iterator
 
 
+def labels_to_cityscapes_palette(image):
+    """
+    Convert an image containing CARLA semantic segmentation labels to
+    Cityscapes palette.
+    """
+    classes = {
+        0: [0, 0, 0],  # None
+        1: [70, 70, 70],  # Buildings
+        2: [190, 153, 153],  # Fences
+        3: [72, 0, 90],  # Other
+        4: [220, 20, 60],  # Pedestrians
+        5: [153, 153, 153],  # Poles
+        6: [157, 234, 50],  # RoadLines
+        7: [128, 64, 128],  # Roads
+        8: [244, 35, 232],  # Sidewalks
+        9: [107, 142, 35],  # Vegetation
+        10: [0, 0, 255],  # Vehicles
+        11: [102, 102, 156],  # Walls
+        12: [220, 220, 0],  # TrafficSigns
+    }
+    result = np.zeros((image.shape[0], image.shape[1], 3))
+    for key, value in classes.items():
+        result[np.where(image == key)] = value
+
+    return result.astype(np.uint8)
+
+
 def show_image(img):
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)), origin='lower', cmap='gray')
+    # npimg = img.numpy()
+    plt.imshow(transforms.ToPILImage()(img), origin='lower')
     plt.show()
 
 

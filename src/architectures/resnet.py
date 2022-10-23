@@ -329,6 +329,7 @@ class ResNetDec(nn.Module):
             BasicBlockDecoder, num_blocks[0], n_classes, stride=1
         )
         self.sigmoid = nn.Sigmoid()
+        self.relu = nn.ReLU()
 
     def _make_layer(self, ResBlock, blocks, planes, stride):
         layers = []
@@ -347,7 +348,7 @@ class ResNetDec(nn.Module):
         x = self.layer3(x)
         x = self.layer2(x)
         out = self.layer1(x)
-        return out
+        return self.relu(out)
 
 
 def SimpleResNet(output_size, channels=1):

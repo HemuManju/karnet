@@ -106,9 +106,42 @@ class SemanticSegmentation(Autoencoder):
 
         # Predict and calculate loss
         output, embeddings = self.forward(x)
-
         criterion = nn.CrossEntropyLoss()
         loss = criterion(output.squeeze(1), labels)
+
+        self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
+        return loss
+
+
+class RNNSegmentation(Autoencoder):
+    def __init__(self, hparams, net, data_loader):
+        super().__init__(hparams, net, data_loader)
+        self.h_params = hparams
+        self.net = net
+        self.data_loader = data_loader
+
+        # Save hyperparameters
+        self.save_hyperparameters(self.h_params)
+
+    def training_step(self, batch, batch_idx):
+        x, labels = batch
+
+        # Predict and calculate loss
+        output, embeddings = self.forward(x)
+
+        criterion = nn.CrossEntropyLoss()
+        loss = criterion(output, labels)
+
+        self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, labels = batch
+
+        # Predict and calculate loss
+        output, embeddings = self.forward(x)
+        criterion = nn.CrossEntropyLoss()
+        loss = criterion(output, labels)  # Target shape: [batch, seq length, H, W]
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         return loss
