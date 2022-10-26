@@ -6,6 +6,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from pytorch_msssim import MS_SSIM
+from piq import MultiScaleSSIMLoss
 
 from .utils import ChamferDistance, calc_ssim_kernel_size
 
@@ -31,10 +32,10 @@ class Autoencoder(pl.LightningModule):
         output, embedding = self.forward(x)
 
         k = calc_ssim_kernel_size(self.h_params['image_resize'], levels=5)
-        criterion = MS_SSIM(win_size=k, data_range=1, size_average=True, channel=1)
-        criterion_l1 = nn.L1Loss()
+        criterion = MultiScaleSSIMLoss(kernel_size=11)
+        criterion_l1 = nn.MSELoss()
 
-        loss = 1.0 - criterion(output, y) + criterion_l1(output, y)
+        loss = criterion(output, y)  # + criterion_l1(output, y)
 
         self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
         return loss
@@ -46,11 +47,10 @@ class Autoencoder(pl.LightningModule):
         output, embedding = self.forward(x)
 
         k = calc_ssim_kernel_size(self.h_params['image_resize'], levels=5)
-        criterion = MS_SSIM(win_size=k, data_range=1, size_average=True, channel=1)
-        criterion_l1 = nn.L1Loss()
+        criterion = MultiScaleSSIMLoss(kernel_size=11)
+        criterion_l1 = nn.MSELoss()
 
-        loss = 1.0 - criterion(output, y) + criterion_l1(output, y)
-
+        loss = criterion(output, y)  # + criterion_l1(output, y)
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         return loss
 
@@ -142,6 +142,51 @@ class RNNSegmentation(Autoencoder):
         output, embeddings = self.forward(x)
         criterion = nn.CrossEntropyLoss()
         loss = criterion(output, labels)  # Target shape: [batch, seq length, H, W]
+
+        self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
+        return loss
+
+
+class RNNEncoder(Autoencoder):
+    def __init__(self, hparams, net, data_loader):
+        super().__init__(hparams, net, data_loader)
+        self.h_params = hparams
+        self.net = net
+        self.data_loader = data_loader
+
+        self.batch_size = self.h_params['BATCH_SIZE']
+        self.seq_length = self.h_params['seq_length'] - 1
+        self.image_size = self.h_params['image_resize']
+
+        # Save hyperparameters
+        self.save_hyperparameters(self.h_params)
+
+    def training_step(self, batch, batch_idx):
+        x, labels = batch
+        batch_size, timesteps, C, H, W = labels.size()
+
+        # Predict and calculate loss
+        output, embeddings = self.forward(x)
+        criterion = MultiScaleSSIMLoss(kernel_size=11)
+        loss = criterion(
+            output.reshape(batch_size * timesteps, C, H, W),
+            labels.reshape(batch_size * timesteps, C, H, W),
+        )
+
+        self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, labels = batch
+        batch_size, timesteps, C, H, W = labels.size()
+
+        # Predict and calculate loss
+        output, embeddings = self.forward(x)
+        criterion = MultiScaleSSIMLoss(kernel_size=11)
+        loss = criterion(
+            output.reshape(batch_size * timesteps, C, H, W),
+            labels.reshape(batch_size * timesteps, C, H, W),
+        )
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         return loss

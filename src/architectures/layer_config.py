@@ -510,7 +510,7 @@ layers_decoder_256_128 = [
         "output_padding": 1,
     },
     {"type": "BatchNorm2d", "num_features": 1, "momentum": bnm},
-    {"type": "ReLU"},
+    {"type": "Sigmoid"},
 ]
 
 layers_encoder_256_128_c = [

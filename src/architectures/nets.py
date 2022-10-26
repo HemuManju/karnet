@@ -209,8 +209,8 @@ class CNNAutoEncoder(pl.LightningModule):
             }
         elif latent_size == 128:
             hparams["autoencoder_config"] = {
-                "layers_encoder": layers_encoder_128,
-                "layers_decoder": layers_decoder_128,
+                "layers_encoder": layers_encoder_256_128,
+                "layers_decoder": layers_decoder_256_128,
             }
         elif latent_size == 256:
             hparams["autoencoder_config"] = {
@@ -330,6 +330,7 @@ class CARNet(pl.LightningModule):
 
         # Parameters
         image_size = hparams['image_resize']
+        latent_size = hparams['latent_size']
         self.example_input_array = torch.randn((2, 4, *image_size))
 
         # Encoder and decoder
@@ -344,9 +345,10 @@ class CARNet(pl.LightningModule):
             num_layers=1,
             batch_first=True,
         )
-        self.linear = nn.Linear(64, 128)
+        self.before_rnn = nn.LazyLinear(latent_size)
+        self.after_rnn = nn.LazyLinear(latent_size)
 
-    def forward(self, x):
+    def forward(self, x, k_states=None):
 
         batch_size, timesteps, C, H, W = x.size()
         # Encoder
@@ -355,17 +357,18 @@ class CARNet(pl.LightningModule):
         )
 
         # RNN logic
+        # Fully Connected layer before RNN
+        embeddings = self.before_rnn(embeddings)
         r_in = embeddings.view(batch_size, timesteps, -1)
+
         r_out, hidden = self.rnn(r_in)
         rnn_embeddings = r_out.contiguous()
 
-        # print(r_out.shape)
-        # rnn_embeddings = self.linear(r_out[:, -1, :])
+        # Fully Connected after the RNN
+        out = self.after_rnn(rnn_embeddings.view(batch_size * timesteps, -1))
 
         # Decoder
-        reconstructed = self.cnn_autoencoder.decode(
-            rnn_embeddings.view(batch_size * timesteps, -1)
-        )
+        reconstructed = self.cnn_autoencoder.decode(out)
         reconstructed = reconstructed.view(batch_size, timesteps, C, H, W)
 
         return reconstructed, rnn_embeddings
@@ -585,6 +588,49 @@ class CIRLRegressorPolicy(pl.LightningModule):
         # interactive_show_grid(x[0])
         embedding = self.back_bone_net(x)
         actions = self.action_net(embedding, command)
+        return actions
+
+
+class CARNETRegressorPolicy(pl.LightningModule):
+    """A simple convolution neural network"""
+
+    def __init__(self, model_config):
+        super(CARNETRegressorPolicy, self).__init__()
+
+        # Parameters
+        self.cfg = model_config
+        image_size = self.cfg['image_resize']
+        obs_size = self.cfg['obs_size']
+        n_actions = self.cfg['n_actions']
+        dropout = self.cfg['DROP_OUT']
+
+        # Example inputs
+        self.example_input_array = torch.randn((2, obs_size, *image_size[1:]))
+        self.example_command = torch.tensor([1, 0, 2, 3, 1])
+
+        self.back_bone_net = BaseConvNet(obs_size)
+        self.action_net = BranchNet(output_size=n_actions, dropout=dropout)
+
+        # Future latent vector prediction
+        self.carnet = self.set_parameter_requires_grad(self.cfg['carnet'])
+
+    def set_parameter_requires_grad(self, model):
+        for param in model.parameters():
+            param.requires_grad = False
+        return model
+
+    def forward(self, x, command):
+        # Future latent vector prediction
+        self.carnet.eval()
+        reconstructed, rnn_embeddings = self.carnet(x[:, :, None, :, :])
+
+        # Basepolicy
+        embedding = self.back_bone_net(x)
+
+        # Combine the embeddings
+        combined_embeddings = torch.hstack((rnn_embeddings[:, -1, :], embedding))
+
+        actions = self.action_net(combined_embeddings, command)
         return actions
 
 

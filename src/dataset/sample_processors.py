@@ -14,7 +14,7 @@ from .utils import get_dataset_paths, generate_seqs
 import matplotlib.pyplot as plt
 
 
-def rnn_samples(samples, config):
+def rnn_semseg_samples(samples, config):
     combined_data = {
         k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
     }
@@ -46,6 +46,25 @@ def rnn_samples(samples, config):
     input_seq = images[0:-1, :, :, :]
     semseg_labels = semseg_labels[1:, 0, :, :]
     return input_seq, semseg_labels
+
+
+def rnn_samples(samples, config):
+    combined_data = {
+        k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
+    }
+
+    images = torch.stack(combined_data['jpeg'], dim=0)
+    preproc = get_preprocessing_pipeline(config)
+    images = preproc(images)
+
+    # Crop the image
+    if config['crop']:
+        crop_size = config['image_resize'][1] - config['crop_image_resize'][1]
+        images = images[:, :, :crop_size, :]
+
+    input_seq = images[0:-1, :, :, :]
+    output_seq = images[1:, :, :, :]
+    return input_seq, output_seq
 
 
 def semseg_samples(samples, config):

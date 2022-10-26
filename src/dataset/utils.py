@@ -77,10 +77,10 @@ def labels_to_cityscapes_palette(image):
     return result.astype(np.uint8)
 
 
-def show_image(img):
+def show_image(img, ax):
     # npimg = img.numpy()
-    plt.imshow(transforms.ToPILImage()(img), origin='lower')
-    plt.show()
+    ax.imshow(transforms.ToPILImage()(img), origin='lower')
+    # plt.show()
 
 
 def nested_dict():

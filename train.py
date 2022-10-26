@@ -38,7 +38,12 @@ from src.architectures.nets import (
 
 
 from src.models.imitation import Imitation
-from src.models.encoding import Autoencoder, SemanticSegmentation, RNNSegmentation
+from src.models.encoding import (
+    Autoencoder,
+    SemanticSegmentation,
+    RNNSegmentation,
+    RNNEncoder,
+)
 from src.models.utils import load_checkpoint, number_parameters
 from src.evaluate.agents import CILAgent
 from src.evaluate.experiments import CORL2017
@@ -77,11 +82,10 @@ with skip_run('skip', 'carnet_autoencoder_training') as check, check():
     logger = pl.loggers.TensorBoardLogger(cfg['logs_path'], name=f'autoencoder')
 
     # Setup
-    net = ResNetAutoencoder(cfg)
+    net = CNNAutoEncoder(cfg)
 
     # Dataloader
     data_loader = get_webdataset_data_iterator(cfg, one_image_samples)
-    model = Autoencoder(cfg, net, data_loader)
 
     if cfg['check_point_path'] is None:
         model = Autoencoder(cfg, net, data_loader)
@@ -95,7 +99,7 @@ with skip_run('skip', 'carnet_autoencoder_training') as check, check():
         max_epochs=cfg['NUM_EPOCHS'],
         logger=logger,
         callbacks=[checkpoint_callback],
-        enable_progress_bar=True,
+        enable_progress_bar=False,
     )
     trainer.fit(model)
 
@@ -129,7 +133,6 @@ with skip_run('skip', 'carnet_semseg_training') as check, check():
 
     # Dataloader
     data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
-    model = SemanticSegmentation(cfg, net, data_loader)
 
     if cfg['check_point_path'] is None:
         model = SemanticSegmentation(cfg, net, data_loader)
@@ -161,23 +164,26 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Setup
-    read_path = f'logs/2022-10-12/AUTOENCODER/segmentation.ckpt'
-    net = ResNetAutoencoder(cfg)
+    read_path = f'logs/2022-10-25/AUTOENCODER/last.ckpt'
+    net = CNNAutoEncoder(cfg)
 
     # Dataloader
     data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
-    model = SemanticSegmentation.load_from_checkpoint(
+    model = Autoencoder.load_from_checkpoint(
         read_path, hparams=cfg, net=net, data_loader=data_loader,
     )
     model.eval()
 
+    fig, ax = plt.subplots(nrows=1, ncols=2)
+
     for x, y in data_loader['training']:
         model.eval()
         with torch.no_grad():
-            reconstructured, embeddings = net(x)
-            print(x.shape)
-            show_image(x[0])
-            show_image(reconstructured[0])
+            reconstructured, embeddings = model(x)
+            show_image(x[0], ax[0])
+            show_image(reconstructured[0], ax[1])
+            plt.pause(0.1)
+            plt.cla()
 
 with skip_run('skip', 'verify_segmentation') as check, check():
     # Load the configuration
@@ -211,10 +217,68 @@ with skip_run('skip', 'verify_segmentation') as check, check():
             labels = torch.argmax(reconstructured[0], dim=0)
             show_image(labels_to_cityscapes_palette(labels))
 
-with skip_run('skip', 'carnet_training') as check, check():
+with skip_run('run', 'carnet_training') as check, check():
     # Load the configuration
-    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/CARNET'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Add navigation type
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        monitor='losses/val_loss',
+        dirpath=cfg['logs_path'],
+        save_top_k=1,
+        filename=f'carnet_{navigation_type}',
+        mode='min',
+        save_last=True,
+    )
+    logger = pl.loggers.TensorBoardLogger(
+        cfg['logs_path'], name=f'carnet_{navigation_type}'
+    )
+
+    # Setup
+    cnn_autoencoder = CNNAutoEncoder(cfg)
+    read_path = 'logs/2022-10-25/AUTOENCODER/last.ckpt'
+    cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
+    # cnn_autoencoder(cnn_autoencoder.example_input_array)
+
+    net = CARNet(cfg, cnn_autoencoder)
+    # net(net.example_input_array)
+
+    # Dataloader
+    data_loader = get_webdataset_data_iterator(cfg, rnn_samples)
+    if cfg['check_point_path'] is None:
+        model = RNNEncoder(cfg, net, data_loader)
+    else:
+        model = Autoencoder.load_from_checkpoint(
+            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+        )
+    # Trainer
+    trainer = pl.Trainer(
+        gpus=gpus,
+        max_epochs=cfg['NUM_EPOCHS'],
+        logger=logger,
+        callbacks=[checkpoint_callback],
+        enable_progress_bar=False,
+    )
+    trainer.fit(model)
+
+with skip_run('skip', 'verify_carnet') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Random seed
     gpus = get_num_gpus()
@@ -236,29 +300,24 @@ with skip_run('skip', 'carnet_training') as check, check():
 
     # Setup
     cnn_autoencoder = CNNAutoEncoder(cfg)
+    read_path = 'logs/2022-10-25/AUTOENCODER/last.ckpt'
+    cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
     # cnn_autoencoder(cnn_autoencoder.example_input_array)
 
-    net = CARNet(cfg, cnn_autoencoder)
-    # net(net.example_input_array)
+    model = CARNet(cfg, cnn_autoencoder)
+    model.eval()
 
-    # Dataloader
-    data_loader = get_webdataset_data_iterator(cfg, rnn_samples())
-    model = Autoencoder(cfg, net, data_loader)
-    if cfg['check_point_path'] is None:
-        model = Autoencoder(cfg, net, data_loader)
-    else:
-        model = Autoencoder.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
-        )
-    # Trainer
-    trainer = pl.Trainer(
-        gpus=gpus,
-        max_epochs=cfg['NUM_EPOCHS'],
-        logger=logger,
-        callbacks=[checkpoint_callback],
-        enable_progress_bar=False,
-    )
-    trainer.fit(model)
+    data_loader = get_webdataset_data_iterator(cfg, rnn_samples)
+    fig, ax = plt.subplots(nrows=1, ncols=2)
+
+    for x, y in data_loader['training']:
+        model.eval()
+        with torch.no_grad():
+            reconstructured, embeddings = model(x)
+            show_image(x[0, 0, ...], ax[0])
+            show_image(reconstructured[0, 0, ...], ax[1])
+            plt.pause(0.1)
+            plt.cla()
 
 with skip_run('skip', 'rescarnet_training') as check, check():
     # Load the configuration
@@ -330,11 +389,12 @@ with skip_run('skip', 'test_loss_function') as check, check():
 
     # Data loader
     data_loader = get_webdataset_data_iterator(cfg, one_image_samples)
+    fig, ax = plt.subplots(nrows=1, ncols=2)
 
     for x, y in data_loader['training']:
-        show_image(x[0, ...])
-        show_image(x[126, ...])
-        test_ssim_loss_function(cfg, x[0:1, ...], x[126:127, ...])
+        show_image(x[0, ...], ax[0])
+        show_image(x[63, ...], ax[1])
+        test_ssim_loss_function(cfg, x[0:1, ...], x[63:64, ...])
 
 with skip_run('skip', 'dataset_analysis') as check, check():
     # Load the configuration
