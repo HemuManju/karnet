@@ -8,13 +8,14 @@
 
 import math
 import numpy as np
+import xml.etree.ElementTree as ET
 
 
 from .rotations import Quaternion, omega, skew_symmetric, angle_normalize
 
 
 class ExtendedKalmanFilter:
-    def __init__(self):
+    def __init__(self, town='Town01'):
         # State (position, velocity and orientation)
         self.p = np.zeros([3, 1])
         self.v = np.zeros([3, 1])
@@ -36,7 +37,7 @@ class ExtendedKalmanFilter:
         self.var_imu_gyro = 0.01
 
         # Motion model noise
-        self.var_gnss = np.eye(3) * 100
+        self.var_gnss = np.eye(3) * 0.001
 
         # Motion model noise Jacobian
         self.l_jac = np.zeros([9, 6])
@@ -50,6 +51,9 @@ class ExtendedKalmanFilter:
         self.n_gnss_taken = 0
         self.gnss_init_xyz = None
         self.initialized = False
+        self.town = town
+
+        self.last_location = None
 
     def is_initialized(self):
         return self.initialized
@@ -85,12 +89,68 @@ class ExtendedKalmanFilter:
             # Low uncertainty in position estimation and high in orientation and
             # velocity
             pos_var = 1
-            orien_var = 1000
+            orien_var = 10
             vel_var = 1000
             self.p_cov[:3, :3] = np.eye(3) * pos_var
             self.p_cov[3:6, 3:6] = np.eye(3) * vel_var
             self.p_cov[6:, 6:] = np.eye(3) * orien_var
             self.initialized = True
+
+    def gnss_to_xyz(self, latitude, longitude, altitude):
+        """Creates Location from GPS (latitude, longitude, altitude).
+            This is the inverse of the _location_to_gps method found in
+            https://github.com/carla-simulator/scenario_runner/blob/master/srunner/tools/route_manipulation.py
+
+            Modified from:
+            https://github.com/erdos-project/pylot/blob/master/pylot/utils.py
+            """
+        EARTH_RADIUS_EQUA = 6378137.0
+
+        scale = math.cos(self.gnss_lat_ref * math.pi / 180.0)
+        basex = scale * math.pi * EARTH_RADIUS_EQUA / 180.0 * self.gnss_long_ref
+        basey = (
+            scale
+            * EARTH_RADIUS_EQUA
+            * math.log(math.tan((90.0 + self.gnss_lat_ref) * math.pi / 360.0))
+        )
+
+        x = scale * math.pi * EARTH_RADIUS_EQUA / 180.0 * longitude - basex
+        y = (
+            scale
+            * EARTH_RADIUS_EQUA
+            * math.log(math.tan((90.0 + latitude) * math.pi / 360.0))
+            - basey
+        )
+
+        # This wasn't in the original method, but seems to be necessary.
+        y *= -1
+
+        return x, y, altitude
+
+    def get_latlon_ref(self, town):
+        """
+        Convert from waypoints world coordinates to CARLA GPS coordinates
+        :return: tuple with lat and lon coordinates
+        https://github.com/carla-simulator/scenario_runner/blob/master/srunner/tools/route_manipulation.py
+        """
+        xodr_path = f'data/Town01.xodr'
+        tree = ET.parse(xodr_path)
+
+        # default reference
+        lat_ref = 42.0
+        lon_ref = 2.0
+
+        for opendrive in tree.iter("OpenDRIVE"):
+            for header in opendrive.iter("header"):
+                for georef in header.iter("geoReference"):
+                    if georef.text:
+                        str_list = georef.text.split(' ')
+                        for item in str_list:
+                            if '+lat_0' in item:
+                                lat_ref = float(item.split('=')[1])
+                            if '+lon_0' in item:
+                                lon_ref = float(item.split('=')[1])
+        return lat_ref, lon_ref
 
     def initialize_with_true_data(self, data):
         """Initialize the vehicle state using gtrue data
@@ -107,22 +167,26 @@ class ExtendedKalmanFilter:
         :param gnss: converted absolute xyz position
         :type gnss: list
         """
-        euler = []
+
+        # Lat long reference
+        self.gnss_lat_ref, self.gnss_long_ref = self.get_latlon_ref(self.town)
+
+        euler = [0, 0, 0]
 
         # Roll pitch and yaw
         euler[0], euler[1] = 0.0, 0.0
 
         v_vec = data['moving_direction']
-        euler[1] = math.atan2(v_vec[1], v_vec[0])  # yaw
+        euler[2] = math.atan2(v_vec[1], v_vec[0])  # yaw
 
-        self.p[:, 0] = data['position']  # TODO: Update
+        self.p[:, 0] = data['location']
         self.q[:, 0] = Quaternion(euler=euler).to_numpy()
 
         # Low uncertainty in position estimation and high in orientation and
         # velocity
         pos_var = 1
-        orien_var = 1000
-        vel_var = 1000
+        orien_var = 1
+        vel_var = 1
         self.p_cov[:3, :3] = np.eye(3) * pos_var
         self.p_cov[3:6, 3:6] = np.eye(3) * vel_var
         self.p_cov[6:, 6:] = np.eye(3) * orien_var
@@ -156,16 +220,12 @@ class ExtendedKalmanFilter:
         :type imu: IMU blueprint instance (Carla)
         """
         # IMU acceleration and velocity
-        imu_f = np.array(
-            [imu.accelerometer.x, imu.accelerometer.y, imu.accelerometer.z]
-        ).reshape(3, 1)
-        imu_w = np.array([imu.gyroscope.x, imu.gyroscope.y, imu.gyroscope.z]).reshape(
-            3, 1
-        )
+        imu_f = np.array(imu[0:3]).reshape(3, 1)
+        imu_w = np.array(imu[3:6]).reshape(3, 1)
 
         # IMU sampling time
-        delta_t = imu.timestamp - self.last_ts
-        self.last_ts = imu.timestamp
+        delta_t = 0.05
+        # self.last_ts = imu.timestamp
 
         # Update state with imu
         R = Quaternion(*self.q).to_mat()
@@ -216,9 +276,7 @@ class ExtendedKalmanFilter:
         :type x: Gnss class (see car.py)
         """
         # Global position
-        x = gnss.x
-        y = gnss.y
-        z = gnss.z
+        x, y, z = self.gnss_to_xyz(gnss[0], gnss[1], gnss[2])
 
         # Kalman gain
         K = (
@@ -238,3 +296,35 @@ class ExtendedKalmanFilter:
 
         # Corrected covariance
         self.p_cov = (np.identity(9) - K @ self.h_jac) @ self.p_cov
+
+    def update(self, data):
+        if self.last_location is None:
+            dist = 0
+        else:
+            dist = np.linalg.norm(
+                np.array(self.last_location[0:2]) - np.array(data['location'][0:2])
+            )
+
+        if self.last_location is None:
+            self.last_location = data['location']
+
+        if not self.is_initialized():
+            self.initialize_with_true_data(data)
+
+        if dist > 20:
+            self.initialize_with_true_data(data)
+
+        self.last_location = data['location']
+
+        # Correction and Prediction
+        self.predict_state_with_imu(data['imu']['values'])
+        corrected = np.vstack((self.p, self.v, self.q))
+
+        self.correct_state_with_gnss(data['gnss']['values'])
+        predicted = np.vstack((self.p, self.v, self.q))
+
+        return (
+            corrected.flatten().astype(np.float32),
+            predicted.flatten().astype(np.float32),
+        )
+

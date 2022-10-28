@@ -21,6 +21,7 @@ def post_process_action(data, config):
         action = torch.tensor(
             [data['throttle'], (data['steer'] + 1) * 2, data['brake']]
         )
+
     elif config['action_processing_id'] == 2:
         action = torch.tensor(
             [
@@ -32,6 +33,7 @@ def post_process_action(data, config):
         )
     elif config['action_processing_id'] == 3:
         action = torch.tensor([data['speed'] / 5.55, (data['steer'] + 1)])
+
     elif config['action_processing_id'] == 4:
         # Calculate theta near and theta far
         theta_near, theta_middle, theta_far = calculate_theta_near_far(
@@ -40,9 +42,16 @@ def post_process_action(data, config):
         action = torch.tensor([theta_near, theta_middle, theta_far, data['steer']])
 
     elif config['action_processing_id'] == 5:
+        n_waypoints = config['n_waypoints']
         ego_frame_waypoints = project_to_ego_frame(data)
-        points = ego_frame_waypoints[0:5, :].astype(np.float32)
+        points = ego_frame_waypoints[0:n_waypoints, :].astype(np.float32)
         action = torch.from_numpy(points)
+
+    elif config['action_processing_id'] == 6:
+        n_waypoints = config['n_waypoints']
+        ego_frame_waypoints = project_to_ego_frame(data)
+        points = ego_frame_waypoints[0:n_waypoints, :].astype(np.float32)
+        action = (torch.from_numpy(points), torch.tensor(data['speed']))
     else:
         action = torch.tensor([data['throttle'], data['steer'], data['brake']])
 
@@ -170,19 +179,19 @@ def calculate_theta_near_far(waypoints, location):
     return float(theta_near), float(theta_middle), float(theta_far)
 
 
-def process_samples(samples, config):
+def concatenate_samples(samples, config):
     combined_data = {
         k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
     }
 
     images = torch.stack(combined_data['jpeg'], dim=0)
     preproc = get_preprocessing_pipeline(config)
-    images = preproc(images).squeeze(1)
+    images = preproc(images)
 
     # Crop the image
     if config['crop']:
         crop_size = config['image_resize'][1] - config['crop_image_resize'][1]
-        images = images[:, :crop_size, :]
+        images = images[:, :, :crop_size, :]
 
     last_data = samples[-1]['json']
 
@@ -193,9 +202,13 @@ def process_samples(samples, config):
 
     # Post processing according to the ID
     action = post_process_action(last_data, config)
-    n_waypoints = config['n_waypoints']
+    images = images[0:-1, :, :, :]
 
-    return images, command, action[0:n_waypoints, :]
+    # Kalman update
+    for sample in samples:
+        kalman = config['ekf'].update(sample['json'])
+
+    return images, command, action, kalman
 
 
 def concatenate_test_samples(samples, config):
@@ -205,12 +218,12 @@ def concatenate_test_samples(samples, config):
 
     images = torch.stack(combined_data['jpeg'], dim=0)
     preproc = get_preprocessing_pipeline(config)
-    images = preproc(images).squeeze(1)
+    images = preproc(images)
 
     # Crop the image
     if config['crop']:
         crop_size = config['image_resize'][1] - config['crop_image_resize'][1]
-        images = images[:, :crop_size, :]
+        images = images[:, :, :crop_size, :]
 
     last_data = samples[-1]['json']
 
@@ -221,9 +234,10 @@ def concatenate_test_samples(samples, config):
 
     # Post processing according to the ID
     action = post_process_action(last_data, config)
+    images = images[0:-1, :, :, :]
     n_waypoints = config['n_waypoints']
 
-    return images, command, action[0:n_waypoints, :], last_data
+    return images, command, action, last_data
 
 
 def webdataset_data_test_iterator(config, file_path):
@@ -231,7 +245,7 @@ def webdataset_data_test_iterator(config, file_path):
     paths = get_dataset_paths(config)
 
     # Parameters
-    SEQ_LEN = config['obs_size']
+    SEQ_LEN = config['seq_length']
 
     dataset = (
         wds.WebDataset(file_path, shardshuffle=False)
@@ -247,7 +261,7 @@ def webdataset_data_iterator(config):
 
     # Parameters
     BATCH_SIZE = config['BATCH_SIZE']
-    SEQ_LEN = config['obs_size']
+    SEQ_LEN = config['seq_length']
     number_workers = config['number_workers']
 
     # Create train, validation, test datasets and save them in a dictionary
@@ -258,7 +272,7 @@ def webdataset_data_iterator(config):
             dataset = (
                 wds.WebDataset(path, shardshuffle=False)
                 .decode("torchrgb")
-                .then(generate_seqs, process_samples, SEQ_LEN, config)
+                .then(generate_seqs, concatenate_samples, SEQ_LEN, config)
             )
             data_loader = wds.WebLoader(
                 dataset,

@@ -544,21 +544,32 @@ class AutoRegressorBranchNet(pl.LightningModule):
         self.layer_size = 512
         self.dropout = dropout
 
-        # For brevity
-        self.right_turn = AutoRegressor(hparams, self.layer_size)
-        self.left_turn = AutoRegressor(hparams, self.layer_size)
-        self.straight = AutoRegressor(hparams, self.layer_size)
-        self.lane_follow = AutoRegressor(hparams, self.layer_size)
+        # Four branches for waypoint prediction
+        self.waypoints_branch = nn.ModuleList(
+            [AutoRegressor(hparams, self.layer_size) for i in range(4)]
+        )
 
-        self.branch = nn.ModuleList(
-            [self.right_turn, self.left_turn, self.straight, self.lane_follow]
+        # Four branches for speed prediction
+        self.speed_branch = nn.ModuleList(
+            [MLP(self.layer_size, 1, dropout=0.0) for i in range(4)]
         )
 
     def forward(self, x, command):
-        out = torch.cat(
-            [self.branch[i - 1](x_in) for x_in, i in zip(x, command.to(torch.int))]
+        waypoints = torch.cat(
+            [
+                self.waypoints_branch[i - 1](x_in)
+                for x_in, i in zip(x, command.to(torch.int))
+            ]
         )
-        return out
+
+        # Speed prediction
+        speed = torch.cat(
+            [
+                self.speed_branch[i - 1](x_in)
+                for x_in, i in zip(x, command.to(torch.int))
+            ]
+        )
+        return waypoints, speed
 
 
 class CIRLRegressorPolicy(pl.LightningModule):
@@ -643,35 +654,35 @@ class CIRLCARNet(pl.LightningModule):
         # Parameters
         self.cfg = model_config
         image_size = self.cfg['image_resize']
-        obs_size = self.cfg['obs_size']
-        n_actions = self.cfg['n_actions']
-        dropout = self.cfg['DROP_OUT']
+        obs_size = self.cfg['seq_length']
 
         # Example inputs
         self.example_input_array = torch.randn((2, obs_size, *image_size[1:]))
         self.example_command = torch.tensor([1, 0, 2, 3, 1])
 
-        self.back_bone_net = BaseConvNet(obs_size)
-        self.action_net = BranchNet(output_size=n_actions, dropout=dropout)
+        self.action_net = self.cfg['action_net']
 
         # Future latent vector prediction
         self.carnet = self.set_parameter_requires_grad(self.cfg['carnet'])
+        self.transition_layer = nn.LazyLinear(512)
 
     def set_parameter_requires_grad(self, model):
         for param in model.parameters():
             param.requires_grad = False
         return model
 
-    def forward(self, x, command):
+    def forward(self, x, command, kalman=None):
         # Future latent vector prediction
         self.carnet.eval()
-        reconstructed, rnn_embeddings = self.carnet(x[:, :, None, :, :])
-
-        # Basepolicy
-        embedding = self.back_bone_net(x)
+        reconstructed, rnn_embeddings = self.carnet(x)
 
         # Combine the embeddings
-        combined_embeddings = torch.hstack((rnn_embeddings[:, -1, :], embedding))
+        combined_embeddings = torch.hstack(
+            (rnn_embeddings[:, -1, :], kalman[0], rnn_embeddings[:, -2, :], kalman[1])
+        )
 
-        actions = self.action_net(combined_embeddings, command)
-        return actions
+        out = self.transition_layer(combined_embeddings)
+
+        # Action prediction
+        waypoints, speed = self.action_net(out, command)
+        return waypoints, speed

@@ -115,9 +115,6 @@ class BasicExperiment(object):
                 self.hero = self.world.try_spawn_actor(
                     self.hero_blueprints, self.start_point
                 )
-
-                print(self.start_point)
-
                 if self.hero is not None:
                     print("Hero spawned!")
                     break

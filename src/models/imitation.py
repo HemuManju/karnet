@@ -20,6 +20,15 @@ class WeightedMSE(torch.nn.MSELoss):
             return torch.mean(super().forward(input, target))
 
 
+class RMSELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mse = nn.MSELoss()
+
+    def forward(self, y_pred, y_true):
+        return torch.sqrt(self.mse(y_pred, y_true))
+
+
 class Imitation(pl.LightningModule):
     def __init__(self, hparams, net, data_loader):
         super(Imitation, self).__init__()
@@ -30,30 +39,36 @@ class Imitation(pl.LightningModule):
         # Save hyperparameters
         # self.save_hyperparameters(self.h_params)
 
-    def forward(self, x, command):
-        output = self.net.forward(x, command)
+    def forward(self, x, command, kalman):
+        output = self.net.forward(x, command, kalman)
         return output
 
     def training_step(self, batch, batch_idx):
-        images, command, action = batch[0], batch[1], batch[2]
+        images, command, action, kalman = batch[0], batch[1], batch[2], batch[3]
 
         # Predict and calculate loss
-        output = self.forward(images, command)
-        criterion = nn.MSELoss()
-        # criterion = WeightedMSE(weights=torch.tensor([1, 1, 1]).to(self.device))
-        loss = criterion(output, action)
+        output = self.forward(images, command, kalman)
+        criterion1 = RMSELoss()
+        criterion2 = nn.MSELoss()
+        loss1 = criterion1(output[0], action[0]) + criterion2(output[0], action[0])
+        loss2 = criterion1(output[1], action[1]) + criterion2(output[1], action[1])
+
+        loss = loss1 + loss2
 
         self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        images, command, action = batch[0], batch[1], batch[2]
+        images, command, action, kalman = batch[0], batch[1], batch[2], batch[3]
 
         # Predict and calculate loss
-        output = self.forward(images, command)
-        criterion = nn.MSELoss()
-        # criterion = WeightedMSE(weights=torch.tensor([1, 1, 1]).to(self.device))
-        loss = criterion(output, action)
+        output = self.forward(images, command, kalman)
+        criterion1 = RMSELoss()
+        criterion2 = nn.MSELoss()
+        loss1 = criterion1(output[0], action[0]) + criterion2(output[0], action[0])
+        loss2 = criterion1(output[1], action[1]) + criterion2(output[1], action[1])
+
+        loss = loss1 + loss2
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         return loss

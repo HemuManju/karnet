@@ -23,6 +23,9 @@ rnn_input_size: 128
 hidden_size: 128
 layers_encoder: null
 layers_decoder: null
+gru_input_size: 2
+gru_hidden_size: 64
+n_waypoints: 2
 
 ##-----------------------------------------------------#
 # Other parameters
@@ -32,6 +35,7 @@ crop_image_resize: [1, 78, 128]
 image_resize: [1, 256, 256]
 alpha: 0.75
 beta: 0.1
+action_processing_id: 6 # 1, 2, 3, 4, 5, 6
 use_scheduler: True
 
 ##-----------------------------------------------------#

@@ -681,3 +681,70 @@ pygame 2.1.2 (SDL 2.0.16, Python 3.9.10)
 Hello from the pygame community. https://www.pygame.org/contribute.html
 [1;32mRunning the block    |  carnet_training[0m
 Epoch    10: reducing learning rate of group 0 to 9.5000e-04.
+=>> PBS: job killed: walltime 30053 exceeded limit 30000
+---------------------------------------
+Begin PBS Epilogue Wed Oct 26 05:51:09 EDT 2022
+Job ID:     5095395.sched-torque.pace.gatech.edu
+User ID:    hmanjunatha6
+Job name:   rnn
+Resources:  nodes=1:ppn=4:gpus=1:TeslaV100-16GB,pmem=8gb,walltime=08:20:00,neednodes=1:ppn=4:gpus=1:TeslaV100-16GB
+Rsrc Used:  cput=32:54:34,vmem=120506576kb,walltime=08:20:53,mem=3724728kb,energy_used=0
+Queue:      inferno
+Nodes:     
+atl1-1-02-005-30.pace.gatech.edu
+End PBS Epilogue Wed Oct 26 05:51:09 EDT 2022
+---------------------------------------
+---------------------------------------
+Begin PBS Prologue Wed Oct 26 14:19:24 EDT 2022
+Job ID:     5098272.sched-torque.pace.gatech.edu
+User ID:    hmanjunatha6
+Job name:   rnn
+Queue:      inferno
+End PBS Prologue Wed Oct 26 14:19:24 EDT 2022
+---------------------------------------
+stty: standard input: Inappropriate ioctl for device
+[88mSkipping the block   |  carnet_autoencoder_training[0m
+[88mSkipping the block   |  carnet_semseg_training[0m
+[88mSkipping the block   |  verify_autoencoder[0m
+[88mSkipping the block   |  verify_segmentation[0m
+[88mSkipping the block   |  carnet_training[0m
+[88mSkipping the block   |  verify_carnet[0m
+[88mSkipping the block   |  rescarnet_training[0m
+[88mSkipping the block   |  test_loss_function[0m
+[88mSkipping the block   |  dataset_analysis[0m
+/storage/home/hcoda1/4/hmanjunatha6/.conda/envs/carla/lib/python3.9/site-packages/torch/nn/modules/lazy.py:178: UserWarning: Lazy modules are a new feature under heavy development so changes to the API or functionality can happen at any moment.
+  warnings.warn('Lazy modules are a new feature under heavy development '
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Missing logger folder: logs/2022-10-26/IMITATION/imitation_navigation
+/storage/home/hcoda1/4/hmanjunatha6/.conda/envs/carla/lib/python3.9/site-packages/pytorch_lightning/utilities/model_summary.py:438: UserWarning: A layer with UninitializedParameter was found. Thus, the total number of parameters detected may be inaccurate.
+  warning_cache.warn(
+
+  | Name | Type       | Params
+------------------------------------
+0 | net  | CIRLCARNet | 3.7 M 
+------------------------------------
+3.3 M     Trainable params
+428 K     Non-trainable params
+3.7 M     Total params
+14.801    Total estimated model params size (MB)
+pygame 2.1.2 (SDL 2.0.16, Python 3.9.10)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[1;32mRunning the block    |  imitation_with_carnet[0m
+Epoch    19: reducing learning rate of group 0 to 9.5000e-04.
+Epoch    26: reducing learning rate of group 0 to 9.0250e-04.
+=>> PBS: job killed: walltime 60049 exceeded limit 60000
+---------------------------------------
+Begin PBS Epilogue Thu Oct 27 07:00:11 EDT 2022
+Job ID:     5098272.sched-torque.pace.gatech.edu
+User ID:    hmanjunatha6
+Job name:   rnn
+Resources:  nodes=1:ppn=4:gpus=1:TeslaV100-16GB,pmem=8gb,walltime=16:40:00,neednodes=1:ppn=4:gpus=1:TeslaV100-16GB
+Rsrc Used:  cput=65:43:59,vmem=109575572kb,walltime=16:40:49,mem=3714780kb,energy_used=0
+Queue:      inferno
+Nodes:     
+atl1-1-02-005-27.pace.gatech.edu
+End PBS Epilogue Thu Oct 27 07:00:11 EDT 2022
+---------------------------------------

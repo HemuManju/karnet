@@ -9,6 +9,7 @@ import math
 
 import collections
 
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -108,13 +109,15 @@ def join_dicts(d, u):
     return result
 
 
-def load_checkpoint(net, checkpoint_path):
+def load_checkpoint(net, checkpoint_path, only_weights=False):
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    if not only_weights:
+        checkpoint = checkpoint['state_dict']
     # NOTE: This is a hacky way to loading the net weights
     # TODO: Find a better way to do
     target_dict = {
-        k.replace('net.', '', 1): checkpoint['state_dict'][k]
-        for k in checkpoint['state_dict'].keys()
+        k.replace('net.', '', 1): checkpoint[k]
+        for k in checkpoint.keys()
         if k.startswith('net.')
     }
     net.load_state_dict(target_dict, strict=True)
