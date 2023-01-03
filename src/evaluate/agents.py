@@ -330,3 +330,60 @@ class PIDCILAgent(BaseAgent):
 
         return control
 
+
+class PIDKalmanAgent(PIDCILAgent):
+    def __init__(self, model, config, avoid_stopping=True, debug=False) -> None:
+        super().__init__(model, config, avoid_stopping, debug)
+
+    def _control_function(self, image_input, command_input, kalman):
+        with torch.no_grad():
+            actions = self.model(
+                image_input.cuda(),
+                torch.tensor(command_input).unsqueeze(0).cuda(),
+                kalman.cuda(),
+            )
+        return actions
+
+    def compute_control(self, observation):
+        # Crop the image
+        images = observation['image']
+        preproc = get_preprocessing_pipeline(self.config)
+        images = preproc(images)
+
+        # Crop the image
+        if self.config['crop']:
+            crop_size = (
+                self.config['image_resize'][1] - self.config['crop_image_resize'][1]
+            )
+            images = images[:, :, :crop_size, :]
+
+        if observation['command'] in [-1, 5, 6]:
+            command = 4
+        else:
+            command = observation['command']
+
+        # Kalman predictions
+        kalman = observation['kalman']
+
+        # Get the control
+        output = self._control_function(images.unsqueeze(0), command, kalman)
+        waypoints, speed = output[0][0].cpu().numpy(), output[1][0].cpu().numpy()
+        world_frame_waypoints = project_to_world_frame(np.array(waypoints), observation)
+
+        if self.current_waypoint is None:
+            self.current_waypoint = world_frame_waypoints[1, :]
+
+        # Find the distance between the waypoint and the location
+        dist = find_distance(self.current_waypoint, location=observation['location'])
+
+        if dist < 0.85:
+            self.current_waypoint = world_frame_waypoints[1, :]
+
+        if command == 3:
+            speed = 10.0
+
+        control = self.pid_controller.run_step(
+            target_speed=10.0, waypoint=self.current_waypoint, observation=observation,
+        )
+
+        return control

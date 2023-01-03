@@ -67,6 +67,32 @@ def rnn_samples(samples, config):
     return input_seq, output_seq
 
 
+def rnn_samples_with_kalman(samples, config):
+    combined_data = {
+        k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)
+    }
+
+    images = torch.stack(combined_data['jpeg'], dim=0)
+    preproc = get_preprocessing_pipeline(config)
+    images = preproc(images)
+
+    kalman_updates = []
+
+    # Crop the image
+    if config['crop']:
+        crop_size = config['image_resize'][1] - config['crop_image_resize'][1]
+        images = images[:, :, :crop_size, :]
+
+    # Kalman update
+    for data in combined_data['json'][:-1]:
+        updates = config['ekf'].update(data)
+        kalman_updates.append(transforms.ToTensor()(updates))
+
+    input_seq = images[0:-1, :, :, :]
+    output_seq = images[1:, :, :, :]
+    return input_seq, output_seq, torch.stack(kalman_updates)
+
+
 def semseg_samples(samples, config):
     combined_data = {
         k: [d.get(k) for d in samples if k in d] for k in set().union(*samples)

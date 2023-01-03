@@ -15,7 +15,10 @@ from .rotations import Quaternion, omega, skew_symmetric, angle_normalize
 
 
 class ExtendedKalmanFilter:
-    def __init__(self, town='Town01'):
+    def __init__(self, cfg, town='Town01'):
+
+        self.config = cfg
+
         # State (position, velocity and orientation)
         self.p = np.zeros([3, 1])
         self.v = np.zeros([3, 1])
@@ -38,14 +41,19 @@ class ExtendedKalmanFilter:
 
         # Motion model noise
         self.var_gnss = np.eye(3) * 0.001
+        self.var_v = np.eye(3) * 0.01
+
+        self.measure_var = np.eye(6)
+        self.measure_var[0:3, 0:3] = self.var_gnss
+        self.measure_var[3:, 3:] = self.var_v
 
         # Motion model noise Jacobian
         self.l_jac = np.zeros([9, 6])
         self.l_jac[3:, :] = np.eye(6)  # motion model noise jacobian
 
         # Measurement model Jacobian
-        self.h_jac = np.zeros([3, 9])
-        self.h_jac[:, :3] = np.eye(3)
+        self.h_jac = np.zeros([6, 9])
+        self.h_jac[:, :6] = np.eye(6)
 
         # Initialized
         self.n_gnss_taken = 0
@@ -224,7 +232,7 @@ class ExtendedKalmanFilter:
         imu_w = np.array(imu[3:6]).reshape(3, 1)
 
         # IMU sampling time
-        delta_t = 0.05
+        delta_t = 0.1
         # self.last_ts = imu.timestamp
 
         # Update state with imu
@@ -268,7 +276,7 @@ class ExtendedKalmanFilter:
 
         return Q
 
-    def correct_state_with_gnss(self, gnss):
+    def correct_state_with_gnss(self, data):
         """Given the estimated global location by gnss, correct
         the vehicle state
 
@@ -276,17 +284,23 @@ class ExtendedKalmanFilter:
         :type x: Gnss class (see car.py)
         """
         # Global position
+        try:
+            gnss = data['gnss']['values']
+        except IndexError:
+            gnss = data['gnss']
         x, y, z = self.gnss_to_xyz(gnss[0], gnss[1], gnss[2])
+        v = data['velocity']
 
         # Kalman gain
         K = (
             self.p_cov
             @ self.h_jac.T
-            @ (np.linalg.inv(self.h_jac @ self.p_cov @ self.h_jac.T + self.var_gnss))
+            @ (np.linalg.inv(self.h_jac @ self.p_cov @ self.h_jac.T + self.measure_var))
         )
 
         # Compute the error state
-        delta_x = K @ (np.array([x, y, z])[:, None] - self.p)
+        pose = np.vstack((self.p, self.v))
+        delta_x = K @ (np.array([x, y, z, v[0], v[1], 0])[:, None] - pose)
 
         # Correction
         self.p = self.p + delta_x[:3]
@@ -296,6 +310,65 @@ class ExtendedKalmanFilter:
 
         # Corrected covariance
         self.p_cov = (np.identity(9) - K @ self.h_jac) @ self.p_cov
+
+    def extract_states(self):
+
+        if self.config['clip_kalman']:
+            position = np.clip(self.p[0:2], a_min=-1, a_max=400)
+            velocity = np.clip(self.v[0:2], a_min=-20, a_max=20)
+        else:
+            position = self.p[0:2]
+            velocity = self.v[0:2]
+
+        if self.config['normalize_kalman']:
+            position = position / self.config['max_position']
+            velocity = velocity / self.config['max_velocity']
+
+        state = np.vstack((position, velocity))
+        return state
+
+    def reset(self):
+        # State (position, velocity and orientation)
+        self.p = np.zeros([3, 1])
+        self.v = np.zeros([3, 1])
+        self.q = np.zeros([4, 1])  # quaternion
+
+        # State covariance
+        self.p_cov = np.zeros([9, 9])
+
+        # Last updated timestamp (to compute the position
+        # recovered by IMU velocity and acceleration, i.e.,
+        # dead-reckoning)
+        self.last_ts = 0
+
+        # Gravity
+        self.g = np.array([0, 0, -9.81]).reshape(3, 1)
+
+        # Sensor noise variances
+        self.var_imu_acc = 0.01
+        self.var_imu_gyro = 0.01
+
+        # Motion model noise
+        self.var_gnss = np.eye(3) * 0.001
+        self.var_v = np.eye(3) * 0.01
+
+        self.measure_var = np.eye(6)
+        self.measure_var[0:3, 0:3] = self.var_gnss
+        self.measure_var[3:, 3:] = self.var_v
+
+        # Motion model noise Jacobian
+        self.l_jac = np.zeros([9, 6])
+        self.l_jac[3:, :] = np.eye(6)  # motion model noise jacobian
+
+        # Measurement model Jacobian
+        self.h_jac = np.zeros([6, 9])
+        self.h_jac[:, :6] = np.eye(6)
+
+        # Initialized
+        self.n_gnss_taken = 0
+        self.gnss_init_xyz = None
+        self.initialized = False
+        self.last_location = None
 
     def update(self, data):
         if self.last_location is None:
@@ -317,14 +390,22 @@ class ExtendedKalmanFilter:
         self.last_location = data['location']
 
         # Correction and Prediction
-        self.predict_state_with_imu(data['imu']['values'])
-        corrected = np.vstack((self.p, self.v, self.q))
+        try:
+            self.predict_state_with_imu(data['imu']['values'])
+        except IndexError:
+            self.predict_state_with_imu(data['imu'])
+        corrected = self.extract_states()
 
-        self.correct_state_with_gnss(data['gnss']['values'])
-        predicted = np.vstack((self.p, self.v, self.q))
+        self.correct_state_with_gnss(data)
+        predicted = self.extract_states()
 
-        return (
-            corrected.flatten().astype(np.float32),
-            predicted.flatten().astype(np.float32),
+        # Stack the corrected and predicted updates
+        updates = np.vstack(
+            (
+                corrected.flatten().astype(np.float32),
+                predicted.flatten().astype(np.float32),
+            )
         )
+
+        return updates
 

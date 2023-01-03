@@ -190,3 +190,52 @@ class RNNEncoder(Autoencoder):
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         return loss
+
+
+class KalmanRNNEncoder(RNNEncoder):
+    def __init__(self, hparams, net, data_loader):
+        super().__init__(hparams, net, data_loader)
+        self.h_params = hparams
+        self.net = net
+        self.data_loader = data_loader
+
+        self.batch_size = self.h_params['BATCH_SIZE']
+        self.seq_length = self.h_params['seq_length'] - 1
+        self.image_size = self.h_params['image_resize']
+
+        # Save hyperparameters
+        self.save_hyperparameters(self.h_params)
+
+    def forward(self, x, kalman):
+        output = self.net.forward(x, kalman)
+        return output
+
+    def training_step(self, batch, batch_idx):
+        x, y, kalman = batch
+        batch_size, timesteps, C, H, W = y.size()
+
+        # Predict and calculate loss
+        output, out_ae, rnn_embeddings = self.forward(x, kalman)
+        criterion = MultiScaleSSIMLoss(kernel_size=11)
+        loss = criterion(
+            output.reshape(batch_size * timesteps, C, H, W),
+            y.reshape(batch_size * timesteps, C, H, W),
+        )
+
+        self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y, kalman = batch
+        batch_size, timesteps, C, H, W = y.size()
+
+        # Predict and calculate loss
+        output, out_ae, rnn_embeddings = self.forward(x, kalman)
+        criterion = MultiScaleSSIMLoss(kernel_size=11)
+        loss = criterion(
+            output.reshape(batch_size * timesteps, C, H, W),
+            y.reshape(batch_size * timesteps, C, H, W),
+        )
+
+        self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
+        return loss

@@ -29,23 +29,35 @@ crop_image_resize: [1, 64, 128]
 alpha: 0.75
 beta: 0.1
 seq_length: 3
+normalize_kalman: True
+clip_kalman: True
+max_position: 400
+max_velocity: 1
 
 ##------------------Vehicle config------------------##
 vehicle:
-  target_speed: 30 # Km/hr
+  target_speed: 20 # Km/hr
+  ignore_traffic_lights: False
+  agent: 'Behavior'
+  behavior: ['cautious'] #  'cautious', 'aggressive'
   blueprint: 'vehicle.lincoln.mkz2017'
   sensors:
-    lane_invasion:
-      type: 'sensor.other.lane_invasion'
     collision:
       type: 'sensor.other.collision'
     imu:
       type: 'sensor.other.imu'
+    gnss:
+      type: 'sensor.other.gnss'
     obstacle:
       type: 'sensor.other.obstacle'
       distance: 5
       hit_radius: 0.5
       only_dynamics: True
+    semseg:
+      type: 'sensor.camera.semantic_segmentation'
+      image_size_x: 256
+      image_size_y: 256
+      transform: '1.25,0,1.85,-90,0,0'
     rgb:
       type: 'sensor.camera.rgb'
       image_size_x: 256
@@ -54,6 +66,7 @@ vehicle:
   sensors_process:
     normalized: True
     gray_scale: True
+  spawn_points: []
   path_points: [[220, 216]]
 
 ##------------------Summary writer config------------------##

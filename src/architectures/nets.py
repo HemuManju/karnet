@@ -374,6 +374,72 @@ class CARNet(pl.LightningModule):
         return reconstructed, rnn_embeddings
 
 
+class CARNetExtended(pl.LightningModule):
+    """
+    Simple auto-encoder with MLP network
+    Args:
+        seq_length: observation/state size of the environment
+        n_actions: number of discrete actions available in the environment
+        self.hidden_size: size of hidden layers
+    """
+
+    def __init__(self, hparams, cnn_autoencoder):
+        super(CARNetExtended, self).__init__()
+
+        # Parameters
+        image_size = hparams['image_resize']
+        latent_size = hparams['latent_size']
+        self.example_input_array = torch.randn((2, 4, *image_size))
+
+        # Encoder and decoder
+        self.cnn_autoencoder = cnn_autoencoder
+
+        # RNN
+        rnn_input_size = hparams['rnn_input_size']
+        hidden_size = hparams['hidden_size']
+        self.rnn = nn.GRU(
+            input_size=rnn_input_size,
+            hidden_size=hidden_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.before_rnn = nn.LazyLinear(latent_size)
+        self.after_rnn = nn.LazyLinear(latent_size)
+
+    def forward(self, x, kalman=None):
+
+        batch_size, timesteps, C, H, W = x.size()
+        # Encoder
+        cnn_embeddings = self.cnn_autoencoder.encode(
+            x.view(batch_size * timesteps, C, H, W)
+        )
+
+        # Before RNN Kalman concatenation
+        combined = torch.hstack(
+            (cnn_embeddings, kalman.view(batch_size * timesteps, -1))
+        )
+
+        # RNN logic
+        # Fully Connected layer before RNN
+        embeddings = self.before_rnn(combined)
+        r_in = embeddings.view(batch_size, timesteps, -1)
+
+        r_out, hidden = self.rnn(r_in)
+        rnn_embeddings = r_out.contiguous()
+
+        # Fully Connected after the RNN
+        out = self.after_rnn(rnn_embeddings.view(batch_size * timesteps, -1))
+
+        # Get the autoencoder output
+        out_ae = self.cnn_autoencoder.decode(cnn_embeddings)
+
+        # Decoder
+        reconstructed = self.cnn_autoencoder.decode(out)
+        reconstructed = reconstructed.view(batch_size, timesteps, C, H, W)
+
+        return reconstructed, out_ae, rnn_embeddings
+
+
 class BaseResNet(pl.LightningModule):
     def __init__(self, obs_size):
         super(BaseResNet, self).__init__()
@@ -672,13 +738,19 @@ class CIRLCARNet(pl.LightningModule):
         return model
 
     def forward(self, x, command, kalman=None):
+
         # Future latent vector prediction
         self.carnet.eval()
         reconstructed, rnn_embeddings = self.carnet(x)
 
         # Combine the embeddings
         combined_embeddings = torch.hstack(
-            (rnn_embeddings[:, -1, :], kalman[0], rnn_embeddings[:, -2, :], kalman[1])
+            (
+                rnn_embeddings[:, -1, :],
+                kalman[:, 0, :],
+                rnn_embeddings[:, -2, :],
+                kalman[:, 1, :],
+            )
         )
 
         out = self.transition_layer(combined_embeddings)

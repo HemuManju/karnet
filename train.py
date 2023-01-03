@@ -17,7 +17,12 @@ from benchmark.core.carla_core import kill_all_servers
 from src.data.create_data import create_regression_data
 from src.data.stats import classification_accuracy
 
-from src.dataset.sample_processors import one_image_samples, rnn_samples, semseg_samples
+from src.dataset.sample_processors import (
+    one_image_samples,
+    rnn_samples,
+    semseg_samples,
+    rnn_samples_with_kalman,
+)
 from src.dataset import imitation_dataset
 from src.dataset.utils import (
     WebDatasetReader,
@@ -28,6 +33,7 @@ from src.dataset.utils import (
 
 from src.architectures.nets import (
     CARNet,
+    CARNetExtended,
     CNNAutoEncoder,
     ResNetAutoencoder,
     CIRLCARNet,
@@ -44,10 +50,11 @@ from src.models.encoding import (
     SemanticSegmentation,
     RNNSegmentation,
     RNNEncoder,
+    KalmanRNNEncoder,
 )
 from src.models.kalman import ExtendedKalmanFilter
 from src.models.utils import load_checkpoint, number_parameters
-from src.evaluate.agents import PIDCILAgent
+from src.evaluate.agents import PIDCILAgent, PIDKalmanAgent
 from src.evaluate.experiments import CORL2017
 
 from benchmark.run_benchmark import Benchmarking
@@ -93,7 +100,10 @@ with skip_run('skip', 'carnet_autoencoder_training') as check, check():
         model = Autoencoder(cfg, net, data_loader)
     else:
         model = Autoencoder.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -140,7 +150,10 @@ with skip_run('skip', 'carnet_semseg_training') as check, check():
         model = SemanticSegmentation(cfg, net, data_loader)
     else:
         model = SemanticSegmentation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -166,13 +179,16 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Setup
-    read_path = f'logs/2022-10-25/AUTOENCODER/last.ckpt'
+    read_path = f'logs/2022-11-09/AUTOENCODER/last.ckpt'
     net = CNNAutoEncoder(cfg)
 
     # Dataloader
     data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
     model = Autoencoder.load_from_checkpoint(
-        read_path, hparams=cfg, net=net, data_loader=data_loader,
+        read_path,
+        hparams=cfg,
+        net=net,
+        data_loader=data_loader,
     )
     model.eval()
 
@@ -207,7 +223,10 @@ with skip_run('skip', 'verify_segmentation') as check, check():
     # Dataloader
     data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
     model = SemanticSegmentation.load_from_checkpoint(
-        read_path, hparams=cfg, net=net, data_loader=data_loader,
+        read_path,
+        hparams=cfg,
+        net=net,
+        data_loader=data_loader,
     )
     model.eval()
 
@@ -223,6 +242,7 @@ with skip_run('skip', 'carnet_training') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/CARNET'
+    cfg['message'] = 'Autoencoder changed 2 filter to 16 filter'
 
     # Random seed
     gpus = get_num_gpus()
@@ -248,7 +268,7 @@ with skip_run('skip', 'carnet_training') as check, check():
 
     # Setup
     cnn_autoencoder = CNNAutoEncoder(cfg)
-    read_path = 'logs/2022-10-25/AUTOENCODER/last.ckpt'
+    read_path = 'logs/2022-11-09/AUTOENCODER/last.ckpt'
     cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
     # cnn_autoencoder(cnn_autoencoder.example_input_array)
 
@@ -261,7 +281,10 @@ with skip_run('skip', 'carnet_training') as check, check():
         model = RNNEncoder(cfg, net, data_loader)
     else:
         model = Autoencoder.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -364,7 +387,10 @@ with skip_run('skip', 'rescarnet_training') as check, check():
         model = RNNSegmentation(cfg, net, data_loader)
     else:
         model = SemanticSegmentation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -464,9 +490,11 @@ with skip_run('skip', 'kalman_analysis') as check, check():
     predicted = []
     location = []
     last_location = None
+    velocity = []
+    velocity_true = []
 
     # Kalman filter
-    ekf = ExtendedKalmanFilter()
+    ekf = ExtendedKalmanFilter(cfg)
 
     for i, data in enumerate(dataset):
         data = data['json'][0]
@@ -476,22 +504,105 @@ with skip_run('skip', 'kalman_analysis') as check, check():
         corrected, predict = ekf.update(data)
 
         location.append(data['location'])
-        predicted.append(predict[0:3])
+        predicted.append(predict[0:2])
+        velocity.append(predict[2:4])
+        velocity_true.append(data['velocity'])
 
         if i > 1000:
             break
 
-    location = np.array(location)
+    location = np.array(location) / 400
     predicted = np.array(predicted)
-    plt.scatter(location[:, 0], location[:, 1])
+    velocity = np.array(velocity)
+    velocity_true = np.array(velocity_true)
+
+    plt.scatter(location[:, 0], location[:, 1], label='Ground Truth')
     # plt.scatter(test_loc[:, 0], test_loc[:, 1], marker='s')
-    plt.scatter(predicted[:, 0], predicted[:, 1], s=10, marker='s')
+    plt.scatter(predicted[:, 0], predicted[:, 1], s=10, marker='s', label='Predicted')
+    plt.xlabel('x position (m)')
+    plt.ylabel('y position (m)')
+    plt.legend()
     plt.show()
+    plt.scatter(np.arange(0, velocity.shape[0]), velocity[:, 0], label='Predicted')
+    plt.scatter(
+        np.arange(0, velocity.shape[0]), velocity_true[:, 0] / 20, label='Ground Truth'
+    )
+    plt.legend()
+    plt.show()
+
+    plt.scatter(np.arange(0, velocity.shape[0]), velocity[:, 1], label='Predicted')
+    plt.scatter(
+        np.arange(0, velocity.shape[0]), velocity_true[:, 1] / 20, label='Ground Truth'
+    )
+    plt.legend()
+    plt.show()
+
+with skip_run('run', 'carnet_with_kalman_training') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/CARNET_KALMAN'
+    cfg['message'] = 'CARNet training with kalman update within the network'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Add navigation type
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    # Kalman filter
+    cfg['ekf'] = ExtendedKalmanFilter(cfg)
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        monitor='losses/val_loss',
+        dirpath=cfg['logs_path'],
+        save_top_k=1,
+        filename=f'carnet_{navigation_type}',
+        mode='min',
+        save_last=True,
+    )
+    logger = pl.loggers.TensorBoardLogger(
+        cfg['logs_path'], name=f'carnet_{navigation_type}'
+    )
+
+    # # Setup
+    cnn_autoencoder = CNNAutoEncoder(cfg)
+    read_path = 'logs/2022-11-09/AUTOENCODER/last.ckpt'
+    cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
+    # cnn_autoencoder(cnn_autoencoder.example_input_array)
+
+    net = CARNetExtended(cfg, cnn_autoencoder)
+    # net(net.example_input_array)
+
+    # Dataloader
+    data_loader = get_webdataset_data_iterator(cfg, rnn_samples_with_kalman)
+    if cfg['check_point_path'] is None:
+        model = KalmanRNNEncoder(cfg, net, data_loader)
+    else:
+        model = KalmanRNNEncoder.load_from_checkpoint(
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
+        )
+    # Trainer
+    trainer = pl.Trainer(
+        gpus=gpus,
+        max_epochs=cfg['NUM_EPOCHS'],
+        logger=logger,
+        callbacks=[checkpoint_callback],
+        enable_progress_bar=False,
+    )
+    trainer.fit(model)
 
 with skip_run('skip', 'imitation_with_carnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+    cfg['message'] = 'Random action net'
 
     # Random seed
     gpus = get_num_gpus()
@@ -515,7 +626,7 @@ with skip_run('skip', 'imitation_with_carnet') as check, check():
 
     # Setup
     # Load the backbone network
-    read_path = 'logs/2022-10-25/CARNET/last.ckpt'
+    read_path = 'logs/2022-11-14/CARNET/last.ckpt'
     cnn_autoencoder = CNNAutoEncoder(cfg)
     carnet = CARNet(cfg, cnn_autoencoder)
     carnet = load_checkpoint(carnet, checkpoint_path=read_path)
@@ -523,10 +634,10 @@ with skip_run('skip', 'imitation_with_carnet') as check, check():
 
     # Action net
     action_net = AutoRegressorBranchNet(dropout=0, hparams=cfg)
-    read_path = 'logs/action_net.pt'
-    action_net = load_checkpoint(
-        action_net, checkpoint_path=read_path, only_weights=True
-    )
+    # read_path = 'logs/action_net.pt'
+    # action_net = load_checkpoint(
+    #     action_net, checkpoint_path=read_path, only_weights=True
+    # )
     cfg['action_net'] = action_net
 
     # Testing
@@ -541,7 +652,10 @@ with skip_run('skip', 'imitation_with_carnet') as check, check():
         model = Imitation(cfg, net, data_loader)
     else:
         model = Imitation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -669,7 +783,7 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
 
     # Setup
     # Load the backbone network
-    read_path = 'logs/2022-10-25/CARNET/last.ckpt'
+    read_path = 'logs/2022-11-14/CARNET/last.ckpt'
     cnn_autoencoder = CNNAutoEncoder(cfg)
     carnet = CARNet(cfg, cnn_autoencoder)
     carnet = load_checkpoint(carnet, checkpoint_path=read_path)
@@ -677,14 +791,14 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
 
     # Action net
     action_net = AutoRegressorBranchNet(dropout=0, hparams=cfg)
-    read_path = 'logs/action_net.pt'
-    action_net = load_checkpoint(
-        action_net, checkpoint_path=read_path, only_weights=True
-    )
+    # read_path = 'logs/action_net.pt'
+    # action_net = load_checkpoint(
+    #     action_net, checkpoint_path=read_path, only_weights=True
+    # )
     cfg['action_net'] = action_net
 
     # Kalmnn filter
-    cfg['ekf'] = ExtendedKalmanFilter()
+    cfg['ekf'] = ExtendedKalmanFilter(cfg)
 
     # Testing
     # reconstructed, rnn_embeddings = carnet(carnet.example_input_array)
@@ -698,7 +812,10 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
         model = Imitation(cfg, net, data_loader)
     else:
         model = Imitation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -799,14 +916,15 @@ with skip_run('skip', 'verify_carnet_imitation') as check, check():
     plt.scatter(pred_waypoints[:, 0], pred_waypoints[:, 1])
     plt.show()
 
-
 with skip_run('skip', 'benchmark_trained_imitaion_model') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
 
     # Experiment_config and experiment suite
     experiment_cfg = yaml.load(open('configs/experiments.yaml'), Loader=yaml.SafeLoader)
-    experiment_suite = CORL2017(experiment_cfg)
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    ekf = ExtendedKalmanFilter(cfg)
+    experiment_suite = CORL2017(experiment_cfg, ekf)
 
     # Carla server
     # Setup carla core and experiment
@@ -825,7 +943,7 @@ with skip_run('skip', 'benchmark_trained_imitaion_model') as check, check():
 
         # Update the model
         restore_config = {
-            'checkpoint_path': f'logs/2022-10-26/IMITATION/imitation_{navigation_type}.ckpt'
+            'checkpoint_path': f'logs/2022-11-05/IMITATION_KALMAN/imitation_{navigation_type}.ckpt'
         }
 
         read_path = 'logs/2022-10-25/CARNET/last.ckpt'
@@ -849,6 +967,67 @@ with skip_run('skip', 'benchmark_trained_imitaion_model') as check, check():
         )
 
         agent = PIDCILAgent(model=model, config=cfg)
+
+        # Setup the benchmark
+        benchmark = Benchmarking(core, cfg, agent, experiment_suite)
+
+        # Run the benchmark
+        benchmark.run(config, exp_id)
+
+    # Kill all servers
+    kill_all_servers()(model, cfg)
+
+with skip_run('skip', 'benchmark_trained_imitaion_kalman_model') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
+
+    # Experiment_config and experiment suite
+    experiment_cfg = yaml.load(open('configs/experiments.yaml'), Loader=yaml.SafeLoader)
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    ekf = ExtendedKalmanFilter(cfg)
+    experiment_suite = CORL2017(experiment_cfg, ekf)
+
+    # Carla server
+    # Setup carla core and experiment
+    kill_all_servers()
+    os.environ["CARLA_ROOT"] = cfg['carla_server']['carla_path']
+    core = CarlaCore(cfg['carla_server'])
+
+    # Get all the experiment configs
+    all_experiment_configs = experiment_suite.get_experiment_configs()
+    for exp_id, config in enumerate(all_experiment_configs):
+        # Update the summary writer info
+        town = config['town']
+        navigation_type = config['navigation_type']
+        weather = config['weather']
+        config['summary_writer']['directory'] = f'{town}_{navigation_type}_{weather}'
+
+        # Update the model
+        restore_config = {
+            'checkpoint_path': f'logs/2022-11-05/IMITATION_KALMAN/imitation_{navigation_type}.ckpt'
+        }
+
+        read_path = 'logs/2022-10-25/CARNET/last.ckpt'
+        cnn_autoencoder = CNNAutoEncoder(cfg)
+        carnet = CARNet(cfg, cnn_autoencoder)
+        carnet = load_checkpoint(carnet, checkpoint_path=read_path)
+        cfg['carnet'] = carnet
+
+        # Action net
+        action_net = AutoRegressorBranchNet(dropout=0, hparams=cfg)
+        read_path = 'logs/action_net.pt'
+        action_net = load_checkpoint(
+            action_net, checkpoint_path=read_path, only_weights=True
+        )
+        cfg['action_net'] = action_net
+        model = Imitation.load_from_checkpoint(
+            restore_config['checkpoint_path'],
+            hparams=cfg,
+            net=CIRLCARNet(cfg),
+            data_loader=None,
+        )
+
+        agent = PIDKalmanAgent(model=model, config=cfg)
 
         # Setup the benchmark
         benchmark = Benchmarking(core, cfg, agent, experiment_suite)
@@ -904,9 +1083,9 @@ with skip_run('skip', 'benchmark_trained_carnet_model') as check, check():
         )
 
         # Change agent
-        agent = CILAgent(model, cfg)
+        # agent = CILAgent(model, cfg)
         # agent = PIDCILAgent(model, cfg)
-        # agent = PIDCILAgent(model, cfg)
+        agent = PIDCILAgent(model, cfg)
 
         # Run the benchmark
         benchmark = Benchmarking(core, cfg, agent, experiment_suite)

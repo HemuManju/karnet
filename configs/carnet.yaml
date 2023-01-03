@@ -14,7 +14,7 @@ predict_length: 0
 n_actions: 3
 n_classes: 23
 frame_skip: 4
-number_workers: 4
+number_workers: 0
 
 ##-----------------------------------------------------#
 # CARNet Parameters
@@ -37,6 +37,10 @@ alpha: 0.75
 beta: 0.1
 action_processing_id: 6 # 1, 2, 3, 4, 5, 6
 use_scheduler: True
+normalize_kalman: True
+clip_kalman: True
+max_position: 400
+max_velocity: 1
 
 ##-----------------------------------------------------#
 # Data splitting scheme
@@ -68,6 +72,7 @@ data_split:
 # Path(s)
 # raw_data_path: '/home/hemanth/Desktop/carla_data/Town01_NAVIGATION/'
 raw_data_path: '../carla_data/Town01_NAVIGATION/'
+# raw_data_path: '/Users/hemanth/Desktop/carla_data/'
 logs_path: 'logs/'
 train_data_path: 'data/raw/train'
 val_data_path: 'data/raw/validation'

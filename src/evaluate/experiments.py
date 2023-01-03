@@ -17,6 +17,8 @@ from benchmark.basic_experiment import BasicExperiment
 from benchmark.navigation.path_planner import PathPlanner
 from benchmark.navigation.utils import distance_vehicle, get_acceleration, get_speed
 
+from src.models.kalman import ExtendedKalmanFilter
+
 try:
     import carla
 except ModuleNotFoundError:
@@ -31,13 +33,15 @@ def read_txt_files(read_path):
 
 
 class CORL2017(BasicExperiment):
-    def __init__(self, experiment_config):
+    def __init__(self, experiment_config, ekf=None):
         super().__init__(experiment_config)
         self.cfg = experiment_config
         self.max_time_idle = self.cfg["others"]["max_time_idle"]
         self.max_time_episode = self.cfg["others"]["max_time_episode"]
         self.image_deque = deque(maxlen=self.cfg['seq_length'])
+        self.kalman_deque = deque(maxlen=self.cfg['seq_length'])
         self.steer_history = deque(maxlen=100)
+        self.ekf = ekf
 
     def _construct_experiment_config(self, base_config, weather, town, navigation_type):
         # Update the spawn points
@@ -82,6 +86,8 @@ class CORL2017(BasicExperiment):
         self.distance_to_destination = 2000
         self.image_deque.clear()
         self.steer_history.clear()
+        self.kalman_deque.clear()
+        self.ekf.reset()
 
         # Set the planner
         self.route_planner = PathPlanner(
@@ -142,6 +148,27 @@ class CORL2017(BasicExperiment):
                 self.image_deque.append(image_tensor)
         else:
             self.image_deque.append(image_tensor)
+
+        # Add location
+        location = self.hero.get_location()
+        sensor_data['location'] = [location.x, location.y, location.z]
+
+        vehicle_transform = self.hero.get_transform()
+        v_vec = vehicle_transform.get_forward_vector()
+        sensor_data['moving_direction'] = [v_vec.x, v_vec.y, 0.0]
+
+        velocity = self.hero.get_velocity()
+        sensor_data['velocity'] = [velocity.x, velocity.y, 0]
+
+        if not self.kalman_deque:
+            for i in range(self.cfg['seq_length']):
+                updates = self.ekf.update(sensor_data)
+                self.kalman_deque.append(transforms.ToTensor()(updates))
+        else:
+            updates = self.ekf.update(sensor_data)
+            self.kalman_deque.append(transforms.ToTensor()(updates))
+
+        observation['kalman'] = list(self.kalman_deque)[-1]
 
         observation['image'] = torch.stack(list(self.image_deque), dim=0)
         command = self.route_planner.get_next_command(debug=False)
