@@ -1035,3 +1035,107 @@ Nodes:
 atl1-1-02-006-34.pace.gatech.edu
 End PBS Epilogue Tue Nov 15 02:53:40 EST 2022
 ---------------------------------------
+---------------------------------------
+Begin PBS Prologue Tue Jan  3 06:52:13 EST 2023
+Job ID:     5305419.sched-torque.pace.gatech.edu
+User ID:    hmanjunatha6
+Job name:   rnn_1
+Queue:      inferno
+End PBS Prologue Tue Jan  3 06:52:13 EST 2023
+---------------------------------------
+stty: standard input: Inappropriate ioctl for device
+[88mSkipping the block   |  carnet_autoencoder_training[0m
+[88mSkipping the block   |  carnet_semseg_training[0m
+[88mSkipping the block   |  verify_autoencoder[0m
+[88mSkipping the block   |  verify_segmentation[0m
+[88mSkipping the block   |  carnet_training[0m
+[88mSkipping the block   |  verify_carnet[0m
+[88mSkipping the block   |  rescarnet_training[0m
+[88mSkipping the block   |  test_loss_function[0m
+[88mSkipping the block   |  dataset_analysis[0m
+[88mSkipping the block   |  kalman_analysis[0m
+/storage/home/hcoda1/4/hmanjunatha6/.conda/envs/carla/lib/python3.9/site-packages/torch/nn/modules/lazy.py:178: UserWarning: Lazy modules are a new feature under heavy development so changes to the API or functionality can happen at any moment.
+  warnings.warn('Lazy modules are a new feature under heavy development '
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+/storage/home/hcoda1/4/hmanjunatha6/.conda/envs/carla/lib/python3.9/site-packages/pytorch_lightning/utilities/model_summary.py:438: UserWarning: A layer with UninitializedParameter was found. Thus, the total number of parameters detected may be inaccurate.
+  warning_cache.warn(
+
+  | Name | Type           | Params
+----------------------------------------
+0 | net  | CARNetExtended | 407 K 
+----------------------------------------
+407 K     Trainable params
+0         Non-trainable params
+407 K     Total params
+1.631     Total estimated model params size (MB)
+/storage/home/hcoda1/4/hmanjunatha6/.conda/envs/carla/lib/python3.9/site-packages/pytorch_lightning/callbacks/model_checkpoint.py:631: UserWarning: Checkpoint directory /storage/scratch1/4/hmanjunatha6/carnet/logs/2023-01-03/CARNET_KALMAN exists and is not empty.
+  rank_zero_warn(f"Checkpoint directory {dirpath} exists and is not empty.")
+=>> PBS: job killed: walltime 43219 exceeded limit 43200
+---------------------------------------
+Begin PBS Epilogue Tue Jan  3 18:52:32 EST 2023
+Job ID:     5305419.sched-torque.pace.gatech.edu
+User ID:    hmanjunatha6
+Job name:   rnn_1
+Resources:  nodes=1:ppn=4:gpus=1:TeslaV100-16GB,pmem=8gb,walltime=12:00:00,neednodes=1:ppn=4:gpus=1:TeslaV100-16GB
+Rsrc Used:  cput=45:04:21,vmem=16053680kb,walltime=12:00:19,mem=2822472kb,energy_used=0
+Queue:      inferno
+Nodes:     
+atl1-1-02-006-36.pace.gatech.edu
+End PBS Epilogue Tue Jan  3 18:52:32 EST 2023
+---------------------------------------
+---------------------------------------
+Begin PBS Prologue Wed Jan  4 02:30:37 EST 2023
+Job ID:     5305931.sched-torque.pace.gatech.edu
+User ID:    hmanjunatha6
+Job name:   rnn_1
+Queue:      inferno
+End PBS Prologue Wed Jan  4 02:30:37 EST 2023
+---------------------------------------
+stty: standard input: Inappropriate ioctl for device
+[88mSkipping the block   |  carnet_autoencoder_training[0m
+[88mSkipping the block   |  carnet_semseg_training[0m
+[88mSkipping the block   |  verify_autoencoder[0m
+[88mSkipping the block   |  verify_segmentation[0m
+[88mSkipping the block   |  carnet_training[0m
+[88mSkipping the block   |  verify_carnet[0m
+[88mSkipping the block   |  rescarnet_training[0m
+[88mSkipping the block   |  test_loss_function[0m
+[88mSkipping the block   |  dataset_analysis[0m
+[88mSkipping the block   |  kalman_analysis[0m
+[88mSkipping the block   |  carnet_with_kalman_training[0m
+[88mSkipping the block   |  imitation_with_carnet[0m
+[88mSkipping the block   |  verify_carnet_imitation[0m
+/storage/home/hcoda1/4/hmanjunatha6/.conda/envs/carla/lib/python3.9/site-packages/torch/nn/modules/lazy.py:178: UserWarning: Lazy modules are a new feature under heavy development so changes to the API or functionality can happen at any moment.
+  warnings.warn('Lazy modules are a new feature under heavy development '
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Missing logger folder: logs/2023-01-04/IMITATION_KALMAN/imitation_navigation
+/storage/home/hcoda1/4/hmanjunatha6/.conda/envs/carla/lib/python3.9/site-packages/pytorch_lightning/utilities/model_summary.py:438: UserWarning: A layer with UninitializedParameter was found. Thus, the total number of parameters detected may be inaccurate.
+  warning_cache.warn(
+
+  | Name | Type       | Params
+------------------------------------
+0 | net  | CIRLCARNet | 1.6 M 
+------------------------------------
+1.2 M     Trainable params
+441 K     Non-trainable params
+1.6 M     Total params
+6.448     Total estimated model params size (MB)
+=>> PBS: job killed: walltime 60040 exceeded limit 60000
+---------------------------------------
+Begin PBS Epilogue Wed Jan  4 19:11:17 EST 2023
+Job ID:     5305931.sched-torque.pace.gatech.edu
+User ID:    hmanjunatha6
+Job name:   rnn_1
+Resources:  nodes=1:ppn=4:gpus=1:TeslaV100-16GB,pmem=8gb,walltime=16:40:00,neednodes=1:ppn=4:gpus=1:TeslaV100-16GB
+Rsrc Used:  cput=66:36:57,vmem=12837996kb,walltime=16:40:40,mem=2659028kb,energy_used=0
+Queue:      inferno
+Nodes:     
+atl1-1-02-003-34.pace.gatech.edu
+End PBS Epilogue Wed Jan  4 19:11:17 EST 2023
+---------------------------------------

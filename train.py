@@ -537,7 +537,7 @@ with skip_run('skip', 'kalman_analysis') as check, check():
     plt.legend()
     plt.show()
 
-with skip_run('run', 'carnet_with_kalman_training') as check, check():
+with skip_run('skip', 'carnet_with_kalman_training') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/CARNET_KALMAN'
@@ -756,7 +756,7 @@ with skip_run('skip', 'verify_carnet_imitation') as check, check():
     plt.scatter(pred_waypoints[:, 0], pred_waypoints[:, 1])
     plt.show()
 
-with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
+with skip_run('run', 'imitation_with_kalman_carnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'
@@ -783,9 +783,9 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
 
     # Setup
     # Load the backbone network
-    read_path = 'logs/2022-11-14/CARNET/last.ckpt'
+    read_path = 'logs/2023-01-03/CARNET_KALMAN/last.ckpt'
     cnn_autoencoder = CNNAutoEncoder(cfg)
-    carnet = CARNet(cfg, cnn_autoencoder)
+    carnet = CARNetExtended(cfg, cnn_autoencoder)
     carnet = load_checkpoint(carnet, checkpoint_path=read_path)
     cfg['carnet'] = carnet
 

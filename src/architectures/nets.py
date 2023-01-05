@@ -437,7 +437,7 @@ class CARNetExtended(pl.LightningModule):
         reconstructed = self.cnn_autoencoder.decode(out)
         reconstructed = reconstructed.view(batch_size, timesteps, C, H, W)
 
-        return reconstructed, out_ae, rnn_embeddings
+        return reconstructed, out_ae, embeddings, out
 
 
 class BaseResNet(pl.LightningModule):
@@ -721,6 +721,7 @@ class CIRLCARNet(pl.LightningModule):
         self.cfg = model_config
         image_size = self.cfg['image_resize']
         obs_size = self.cfg['seq_length']
+        self.time_steps = self.cfg['seq_length'] - 1
 
         # Example inputs
         self.example_input_array = torch.randn((2, obs_size, *image_size[1:]))
@@ -739,20 +740,26 @@ class CIRLCARNet(pl.LightningModule):
 
     def forward(self, x, command, kalman=None):
 
+        batch_size, timesteps, C, H, W = x.size()
+
         # Future latent vector prediction
         self.carnet.eval()
-        reconstructed, rnn_embeddings = self.carnet(x)
+        reconstructed, out_ae, embeddings, out = self.carnet(x, kalman)
 
+        embeddings = embeddings.view(batch_size, self.time_steps, -1)
+        out = out.view(batch_size, self.time_steps, -1)
         # Combine the embeddings
-        combined_embeddings = torch.hstack(
-            (
-                rnn_embeddings[:, -1, :],
-                kalman[:, 0, :],
-                rnn_embeddings[:, -2, :],
-                kalman[:, 1, :],
-            )
-        )
+        # combined_embeddings = torch.hstack(
+        #     (
+        #         rnn_embeddings[:, -1, :],
+        #         kalman[:, 0, :],
+        #         rnn_embeddings[:, -2, :],
+        #         kalman[:, 1, :],
+        #     )
+        # )
+        combined_embeddings = torch.hstack((embeddings[:, -1, :], out[:, -1, :]))
 
+        # Transition layer
         out = self.transition_layer(combined_embeddings)
 
         # Action prediction

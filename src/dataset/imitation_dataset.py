@@ -5,6 +5,9 @@ import scipy.interpolate
 
 import matplotlib.pyplot as plt
 
+from torchvision import transforms
+
+
 from .preprocessing import get_preprocessing_pipeline
 
 from .utils import (
@@ -187,6 +190,7 @@ def concatenate_samples(samples, config):
     images = torch.stack(combined_data['jpeg'], dim=0)
     preproc = get_preprocessing_pipeline(config)
     images = preproc(images)
+    kalman_updates = []
 
     # Crop the image
     if config['crop']:
@@ -205,10 +209,11 @@ def concatenate_samples(samples, config):
     images = images[0:-1, :, :, :]
 
     # Kalman update
-    for sample in samples:
-        kalman = config['ekf'].update(sample['json'])
+    for data in combined_data['json'][:-1]:
+        updates = config['ekf'].update(data)
+        kalman_updates.append(transforms.ToTensor()(updates))
 
-    return images, command, action, kalman
+    return images, command, action, torch.stack(kalman_updates)
 
 
 def concatenate_test_samples(samples, config):

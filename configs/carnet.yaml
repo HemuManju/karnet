@@ -40,7 +40,7 @@ use_scheduler: True
 normalize_kalman: True
 clip_kalman: True
 max_position: 400
-max_velocity: 1
+max_velocity: 20
 
 ##-----------------------------------------------------#
 # Data splitting scheme
