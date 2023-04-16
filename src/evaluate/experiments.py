@@ -168,7 +168,7 @@ class CORL2017(BasicExperiment):
             updates = self.ekf.update(sensor_data)
             self.kalman_deque.append(transforms.ToTensor()(updates))
 
-        observation['kalman'] = list(self.kalman_deque)[-1]
+        observation['kalman'] = torch.stack(list(self.kalman_deque))
 
         observation['image'] = torch.stack(list(self.image_deque), dim=0)
         command = self.route_planner.get_next_command(debug=False)

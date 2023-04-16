@@ -576,7 +576,7 @@ class AutoRegressor(pl.LightningModule):
 
         # Building blocks
         self.gru = nn.GRUCell(input_size=input_size, hidden_size=gru_hidden_size)
-        self.output = nn.Linear(gru_hidden_size, 2)
+        self.output = nn.Sequential(nn.Linear(gru_hidden_size, 2), nn.Tanh())
 
         self.mlp = MLP(latent_size, gru_hidden_size, dropout=0.0)
 

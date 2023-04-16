@@ -22,7 +22,7 @@ def consolidate_results(df):
     results['n_collisions'] = sum(((df['n_collisions'] > 0) * 1).diff().dropna() > 0)
     # results['n_collisions'] = df['n_collisions'].values[-1]
 
-    if (not_stopped_percent < 95.0) and not results['successfull']:
+    if (not_stopped_percent < 90.0) and not results['successfull']:
         results['not_stalled'] = False
     else:
         results['not_stalled'] = True
@@ -47,7 +47,7 @@ def consolidate_results(df):
     infractions = (
         +results['n_vehicle_collisions']
         + results['n_predistrain_collision']
-        # + results['n_other_collisions']
+        + results['n_other_collisions']
         + results['n_lane_invasion']
     )
     results['infractions'] = infractions * (1000 / results['distance_travelled'])
