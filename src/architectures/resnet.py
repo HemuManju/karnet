@@ -6,7 +6,7 @@ import torch.nn.functional as F
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, in_channels, out_channels, downsample_func=None, stride=1):
+    def __init__(self, in_channels, out_channels, i_downsample=None, stride=1):
         super(Bottleneck, self).__init__()
 
         self.conv1 = nn.Conv2d(
@@ -28,21 +28,22 @@ class Bottleneck(nn.Module):
         )
         self.batch_norm3 = nn.BatchNorm2d(out_channels * self.expansion)
 
-        self.downsample_func = downsample_func
+        self.i_downsample = i_downsample
         self.stride = stride
         self.relu = nn.ReLU()
 
     def forward(self, x):
         identity = x.clone()
         x = self.relu(self.batch_norm1(self.conv1(x)))
+
         x = self.relu(self.batch_norm2(self.conv2(x)))
 
         x = self.conv3(x)
         x = self.batch_norm3(x)
 
         # downsample if needed
-        if self.downsample_func is not None:
-            identity = self.downsample_func(identity)
+        if self.i_downsample is not None:
+            identity = self.i_downsample(identity)
         # add identity
         x += identity
         x = self.relu(x)
@@ -53,7 +54,7 @@ class Bottleneck(nn.Module):
 class Block(nn.Module):
     expansion = 1
 
-    def __init__(self, in_channels, out_channels, downsample_func=None, stride=1):
+    def __init__(self, in_channels, out_channels, i_downsample=None, stride=1):
         super(Block, self).__init__()
 
         self.conv1 = nn.Conv2d(
@@ -75,7 +76,7 @@ class Block(nn.Module):
         )
         self.batch_norm2 = nn.BatchNorm2d(out_channels)
 
-        self.downsample_func = downsample_func
+        self.i_downsample = i_downsample
         self.stride = stride
         self.relu = nn.ReLU()
 
@@ -85,8 +86,8 @@ class Block(nn.Module):
         x = self.relu(self.batch_norm2(self.conv1(x)))
         x = self.batch_norm2(self.conv2(x))
 
-        if self.downsample_func is not None:
-            identity = self.downsample_func(identity)
+        if self.i_downsample is not None:
+            identity = self.i_downsample(identity)
         x += identity
         x = self.relu(x)
         return x
@@ -95,24 +96,19 @@ class Block(nn.Module):
 class ResNet(nn.Module):
     def __init__(self, ResBlock, layer_list, output_size, num_channels=3):
         super(ResNet, self).__init__()
-        self.in_channels = 16
+        self.in_channels = 64
 
         self.conv1 = nn.Conv2d(
-            num_channels,
-            self.in_channels,
-            kernel_size=7,
-            stride=2,
-            padding=3,
-            bias=False,
+            num_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
         )
-        self.batch_norm1 = nn.BatchNorm2d(self.in_channels)
+        self.batch_norm1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        self.layer1 = self._make_layer(ResBlock, layer_list[0], planes=16)
-        self.layer2 = self._make_layer(ResBlock, layer_list[1], planes=32, stride=2)
-        self.layer3 = self._make_layer(ResBlock, layer_list[2], planes=64, stride=2)
-        self.layer4 = self._make_layer(ResBlock, layer_list[3], planes=128, stride=2)
+        self.layer1 = self._make_layer(ResBlock, layer_list[0], planes=64)
+        self.layer2 = self._make_layer(ResBlock, layer_list[1], planes=128, stride=2)
+        self.layer3 = self._make_layer(ResBlock, layer_list[2], planes=256, stride=2)
+        self.layer4 = self._make_layer(ResBlock, layer_list[3], planes=512, stride=2)
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * ResBlock.expansion, output_size)
@@ -133,11 +129,11 @@ class ResNet(nn.Module):
         return x
 
     def _make_layer(self, ResBlock, blocks, planes, stride=1):
-        downsample_func = None
+        ii_downsample = None
         layers = []
 
         if stride != 1 or self.in_channels != planes * ResBlock.expansion:
-            downsample_func = nn.Sequential(
+            ii_downsample = nn.Sequential(
                 nn.Conv2d(
                     self.in_channels,
                     planes * ResBlock.expansion,
@@ -146,9 +142,10 @@ class ResNet(nn.Module):
                 ),
                 nn.BatchNorm2d(planes * ResBlock.expansion),
             )
+
         layers.append(
             ResBlock(
-                self.in_channels, planes, downsample_func=downsample_func, stride=stride
+                self.in_channels, planes, i_downsample=ii_downsample, stride=stride
             )
         )
         self.in_channels = planes * ResBlock.expansion
@@ -349,6 +346,18 @@ class ResNetDec(nn.Module):
         x = self.layer2(x)
         out = self.layer1(x)
         return self.relu(out)
+
+
+def ResNet50(output_size, channels=1):
+    return ResNet(Bottleneck, [1, 1, 1, 1], output_size, channels)
+
+
+def ResNet101(output_size, channels=1):
+    return ResNet(Bottleneck, [3, 4, 23, 3], output_size, channels)
+
+
+def ResNet152(output_size, channels=1):
+    return ResNet(Bottleneck, [3, 8, 36, 3], output_size, channels)
 
 
 def SimpleResNet(output_size, channels=1):

@@ -109,7 +109,7 @@ def join_dicts(d, u):
     return result
 
 
-def load_checkpoint(net, checkpoint_path, only_weights=False):
+def load_checkpoint(net, checkpoint_path, only_weights=False, strict=True):
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     if not only_weights:
         checkpoint = checkpoint['state_dict']
@@ -120,7 +120,7 @@ def load_checkpoint(net, checkpoint_path, only_weights=False):
         for k in checkpoint.keys()
         if k.startswith('net.')
     }
-    net.load_state_dict(target_dict, strict=True)
+    net.load_state_dict(target_dict, strict=strict)
     return net
 
 

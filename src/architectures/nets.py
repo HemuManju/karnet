@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from src.visualization.visualize import interactive_show_grid
 
-from .resnet import SimpleResNet, ResNetDec, ResNetEnc
+from .resnet import SimpleResNet, ResNetDec, ResNetEnc, ResNet
 
 from .layer_config import (
     layers_encoder_256_128,
@@ -576,7 +576,7 @@ class AutoRegressor(pl.LightningModule):
 
         # Building blocks
         self.gru = nn.GRUCell(input_size=input_size, hidden_size=gru_hidden_size)
-        self.output = nn.Sequential(nn.Linear(gru_hidden_size, 2), nn.Tanh())
+        self.output = nn.Linear(gru_hidden_size, 2)
 
         self.mlp = MLP(latent_size, gru_hidden_size, dropout=0.0)
 
@@ -636,6 +636,36 @@ class AutoRegressorBranchNet(pl.LightningModule):
             ]
         )
         return waypoints, speed
+
+
+class CIRLWaypointPolicy(pl.LightningModule):
+    """A simple convolution neural network"""
+
+    def __init__(self, model_config):
+        super(CIRLWaypointPolicy, self).__init__()
+
+        # Parameters
+        self.cfg = model_config
+        image_size = self.cfg['image_resize']
+        obs_size = self.cfg['obs_size']
+        n_actions = self.cfg['n_actions']
+        dropout = self.cfg['DROP_OUT']
+
+        # Example inputs
+        self.example_input_array = torch.randn(
+            (5, obs_size, image_size[1], image_size[2])
+        )
+        self.example_command = torch.tensor([1, 0, 2, 3, 1])
+
+        self.back_bone_net = BaseResNet(obs_size)
+        # self.action_net = AutoRegressorBranchNet(dropout=dropout, hparams=model_config)
+
+    def forward(self, x, command):
+        # Testing
+        # interactive_show_grid(x[0])
+        embedding = self.back_bone_net(x)
+        # actions = self.action_net(embedding, command)
+        return embedding
 
 
 class CIRLRegressorPolicy(pl.LightningModule):
@@ -711,6 +741,58 @@ class CARNETRegressorPolicy(pl.LightningModule):
         return actions
 
 
+class CIRLBasePolicyKARNet(pl.LightningModule):
+    """A simple convolution neural network"""
+
+    def __init__(self, model_config):
+        super(CIRLBasePolicyKARNet, self).__init__()
+
+        # Parameters
+        self.cfg = model_config
+        image_size = self.cfg['image_resize']
+        obs_size = self.cfg['seq_length']
+        self.time_steps = self.cfg['seq_length'] - 1
+
+        # Example inputs
+        self.example_input_array = torch.randn((5, self.time_steps, *image_size))
+        self.example_command = torch.tensor([1, 0, 2, 3, 1])
+        self.example_kalman = torch.rand((5, 3, 1, 2, 4))
+
+        self.action_net = self.cfg['action_net']
+
+        # Future latent vector prediction
+        self.carnet = self.set_parameter_requires_grad(self.cfg['carnet'])
+        self.base_policy = self.set_parameter_requires_grad(self.cfg['base_policy'])
+        self.transition_layer = nn.LazyLinear(512)
+
+    def set_parameter_requires_grad(self, model):
+        for param in model.parameters():
+            param.requires_grad = False
+        return model
+
+    def forward(self, x, command, kalman=None):
+        batch_size, timesteps, C, H, W = x.size()
+
+        # Future latent vector prediction
+        self.carnet.eval()
+        reconstructed, out_ae, embeddings, out = self.carnet(x, kalman)
+        embeddings = embeddings.view(batch_size, self.time_steps, -1)
+        out = out.view(batch_size, self.time_steps, -1)
+
+        # Base Policy
+        self.base_policy.eval()
+        base_x = self.base_policy.back_bone_net(x[:, -1, :, :, :])
+
+        combined_embeddings = torch.hstack((embeddings[:, -1, :], base_x))
+
+        # Transition layer
+        out = self.transition_layer(combined_embeddings)
+
+        # Action prediction
+        waypoints, speed = self.action_net(out, command)
+        return waypoints, speed
+
+
 class CIRLCARNet(pl.LightningModule):
     """A simple convolution neural network"""
 
@@ -748,15 +830,6 @@ class CIRLCARNet(pl.LightningModule):
 
         embeddings = embeddings.view(batch_size, self.time_steps, -1)
         out = out.view(batch_size, self.time_steps, -1)
-        # Combine the embeddings
-        # combined_embeddings = torch.hstack(
-        #     (
-        #         rnn_embeddings[:, -1, :],
-        #         kalman[:, 0, :],
-        #         rnn_embeddings[:, -2, :],
-        #         kalman[:, 1, :],
-        #     )
-        # )
         combined_embeddings = torch.hstack((embeddings[:, -1, :], out[:, -1, :]))
 
         # Transition layer
