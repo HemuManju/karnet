@@ -257,3 +257,6 @@ Thumbs.db
 /reports/
 /_benchmarks_results/
 /trained_models/
+
+# .out files from PACE
+*.out

@@ -50,11 +50,11 @@ class Imitation(pl.LightningModule):
         output = self.forward(images, command, kalman)
         criterion1 = RMSELoss()
         criterion2 = nn.MSELoss()
-        # loss1 = criterion1(output[0], action[0]) + criterion2(output[0], action[0])
-        # loss2 = criterion1(output[1], action[1]) + criterion2(output[1], action[1])
+        loss1 = criterion1(output[0], action[0]) + criterion2(output[0], action[0])
+        loss2 = criterion1(output[1], action[1]) + criterion2(output[1], action[1])
 
-        # loss = loss1 + loss2
-        loss = criterion2(output[0], action[0])
+        loss = loss1 + loss2
+        # loss = criterion2(output[0], action[0])
 
         self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
         return loss
@@ -66,11 +66,11 @@ class Imitation(pl.LightningModule):
         output = self.forward(images, command, kalman)
         criterion1 = RMSELoss()
         criterion2 = nn.MSELoss()
-        # loss1 = criterion1(output[0], action[0]) + criterion2(output[0], action[0])
-        # loss2 = criterion1(output[1], action[1]) + criterion2(output[1], action[1])
+        loss1 = criterion1(output[0], action[0]) + criterion2(output[0], action[0])
+        loss2 = criterion1(output[1], action[1]) + criterion2(output[1], action[1])
 
-        # loss = loss1 + loss2
-        loss = criterion2(output[0], action[0])
+        loss = loss1 + loss2
+        # loss = criterion2(output[0], action[0])
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         return loss

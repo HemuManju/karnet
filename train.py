@@ -235,7 +235,7 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
     )
     trainer.fit(model)
 
-with skip_run('run', 'imitation_with_kanet_base_policy') as check, check():
+with skip_run('skip', 'imitation_with_kanet_base_policy') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'

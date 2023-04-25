@@ -750,7 +750,7 @@ class CIRLBasePolicyKARNet(pl.LightningModule):
         # Parameters
         self.cfg = model_config
         image_size = self.cfg['image_resize']
-        obs_size = self.cfg['seq_length']
+        obs_size = self.cfg['obs_size']
         self.time_steps = self.cfg['seq_length'] - 1
 
         # Example inputs
@@ -762,7 +762,8 @@ class CIRLBasePolicyKARNet(pl.LightningModule):
 
         # Future latent vector prediction
         self.carnet = self.set_parameter_requires_grad(self.cfg['carnet'])
-        self.base_policy = self.set_parameter_requires_grad(self.cfg['base_policy'])
+        # self.base_policy = self.cfg['base_policy']
+        self.back_bone_net = BaseResNet(obs_size)
         self.transition_layer = nn.LazyLinear(512)
 
     def set_parameter_requires_grad(self, model):
@@ -780,8 +781,8 @@ class CIRLBasePolicyKARNet(pl.LightningModule):
         out = out.view(batch_size, self.time_steps, -1)
 
         # Base Policy
-        self.base_policy.eval()
-        base_x = self.base_policy.back_bone_net(x[:, -1, :, :, :])
+        # self.base_policy.eval()
+        base_x = self.back_bone_net(x[:, -1, :, :, :])
 
         combined_embeddings = torch.hstack((embeddings[:, -1, :], base_x))
 
