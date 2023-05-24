@@ -765,3 +765,68 @@ class CIRLCARNet(pl.LightningModule):
         # Action prediction
         waypoints, speed = self.action_net(out, command)
         return waypoints, speed
+
+
+class MultistepCIRLCARNet(pl.LightningModule):
+    """A simple convolution neural network"""
+
+    def __init__(self, model_config):
+        super(MultistepCIRLCARNet, self).__init__()
+
+        # Parameters
+        self.cfg = model_config
+        image_size = self.cfg['image_resize']
+        obs_size = self.cfg['seq_length']
+        self.time_steps = self.cfg['seq_length'] - 1
+
+        # Example inputs
+        self.example_input_array = torch.randn((5, self.time_steps, *image_size))
+        self.example_command = torch.tensor([1, 0, 2, 3, 1])
+        self.example_kalman = torch.rand((5, 3, 1, 2, 4))
+
+        self.action_net = self.cfg['action_net']
+
+        # Future latent vector prediction
+        self.carnet = self.set_parameter_requires_grad(self.cfg['carnet'])
+        self.transition_layer = nn.LazyLinear(512)
+
+    def set_parameter_requires_grad(self, model):
+        for param in model.parameters():
+            param.requires_grad = False
+        return model
+
+    def forward(self, x, command, kalman=None):
+
+        batch_size, timesteps, C, H, W = x.size()
+
+        # Future latent vector prediction
+        self.carnet.eval()
+        reconstructed, out_ae, embeddings, out = self.carnet(x, kalman)
+
+        multi_embeddings = [0, 0]
+        multi_out = [0, 0]
+
+        for i in range(2):
+            reconstructed, out_ae, multi_embeddings[i], multi_out[i] = self.carnet(
+                reconstructed[:, -1:, :, :, :], kalman[:, -1:, :, :, :]
+            )
+
+        embeddings = embeddings.view(batch_size, self.time_steps, -1)
+        out = out.view(batch_size, self.time_steps, -1)
+        combined_embeddings = torch.hstack(
+            (
+                embeddings[:, -1, :],
+                out[:, -1, :],
+                multi_embeddings[0],
+                multi_out[0],
+                multi_embeddings[1],
+                multi_out[1],
+            )
+        )
+
+        # Transition layer
+        out = self.transition_layer(combined_embeddings)
+
+        # Action prediction
+        waypoints, speed = self.action_net(out, command)
+        return waypoints, speed

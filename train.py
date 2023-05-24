@@ -37,10 +37,9 @@ from src.architectures.nets import (
     CNNAutoEncoder,
     ResNetAutoencoder,
     CIRLCARNet,
-    CIRLBasePolicy,
     ResCARNet,
     AutoRegressorBranchNet,
-    CIRLRegressorPolicy,
+    MultistepCIRLCARNet,
 )
 
 
@@ -643,6 +642,80 @@ with skip_run('skip', 'imitation_with_carnet') as check, check():
     )
     trainer.fit(model)
 
+with skip_run('skip', 'multistep_imitation_with_carnet') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
+
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        monitor='losses/val_loss',
+        dirpath=cfg['logs_path'],
+        save_top_k=1,
+        filename=f'imitation_{navigation_type}',
+        mode='min',
+        save_last=True,
+    )
+    logger = pl.loggers.TensorBoardLogger(
+        cfg['logs_path'], name=f'imitation_{navigation_type}'
+    )
+
+    # Setup
+    # Load the backbone network
+    read_path = 'logs/2023-01-03/CARNET_KALMAN/last.ckpt'
+    cnn_autoencoder = CNNAutoEncoder(cfg)
+    carnet = CARNetExtended(cfg, cnn_autoencoder)
+    carnet = load_checkpoint(carnet, checkpoint_path=read_path)
+    cfg['carnet'] = carnet
+
+    # Action net
+    action_net = AutoRegressorBranchNet(dropout=0, hparams=cfg)
+    cfg['action_net'] = action_net
+
+    # Kalmnn filter
+    cfg['ekf'] = ExtendedKalmanFilter(cfg)
+
+    net = MultistepCIRLCARNet(cfg)
+    net(net.example_input_array, net.example_command, net.example_kalman)
+
+    # Dataloader
+    data_loader = imitation_dataset.webdataset_data_iterator(cfg)
+    if cfg['check_point_path'] is None:
+        model = Imitation(cfg, net, data_loader)
+    else:
+        model = Imitation.load_from_checkpoint(
+            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+        )
+    # Trainer
+    if cfg['slurm']:
+        trainer = pl.Trainer(
+            accelerator='gpu',
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=False,
+            strategy="ddp",
+            num_nodes=1,
+        )
+    else:
+        trainer = pl.Trainer(
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=True,
+        )
+
+    trainer.fit(model)
+
 with skip_run('skip', 'verify_carnet_imitation') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
@@ -732,7 +805,7 @@ with skip_run('skip', 'verify_carnet_imitation') as check, check():
     plt.scatter(pred_waypoints[:, 0], pred_waypoints[:, 1])
     plt.show()
 
-with skip_run('run', 'imitation_with_kalman_carnet') as check, check():
+with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'
