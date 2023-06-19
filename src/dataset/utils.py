@@ -7,12 +7,48 @@ import math
 
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 from torchvision import transforms
 
 import natsort
 
 import webdataset as wds
+
+
+def get_webdataset_real_data_iterator(config, sample_processors):
+
+    # Get dataset path(s)
+    paths = get_real_dataset_paths(config)
+
+    # Parameter(s)
+    BATCH_SIZE = config['BATCH_SIZE']
+    SEQ_LEN = config['seq_length'] + config['predict_length']
+    number_workers = config['number_workers']
+
+    # Create train, validation, test datasets and save them in a dictionary
+    data_iterator = {}
+
+    for key, path in paths.items():
+        if path:
+            dataset = (
+                wds.WebDataset(path, shardshuffle=False)
+                .decode("torchrgb")
+                .then(generate_seqs, sample_processors, SEQ_LEN, config)
+            )
+            data_loader = wds.WebLoader(
+                dataset,
+                num_workers=number_workers,
+                shuffle=False,
+                batch_size=BATCH_SIZE,
+            )
+            if key in ['training', 'validation']:
+                dataset_size = 6250 * len(path)
+                data_loader.length = dataset_size // BATCH_SIZE
+
+            data_iterator[key] = data_loader
+
+    return data_iterator
 
 
 def get_webdataset_data_iterator(config, sample_processors):
@@ -100,6 +136,25 @@ def generate_seqs(src, process_samples, nsamples=3, config=None):
 def find_tar_files(read_path, pattern):
     files = [str(f) for f in Path(read_path).glob('*.tar') if f.match(pattern + '*')]
     return natsort.natsorted(files)
+
+
+def get_real_dataset_paths(config, shuffle=False):
+    paths = {}
+    data_split = config['data_split']
+    read_path = config['real_data_path']
+    tar_files = find_tar_files(read_path, pattern='real_data_')
+
+    train_idx, val_idx = train_test_split(
+        np.arange(len(tar_files), dtype=int),
+        test_size=data_split['validation']['ratio'],
+        shuffle=shuffle,
+    )
+
+    # Concatenate all the paths and assign to dict
+    paths['training'] = [tar_files[idx] for idx in train_idx]
+    paths['validation'] = [tar_files[idx] for idx in val_idx]
+    paths['testing'] = []
+    return paths
 
 
 def get_dataset_paths(config):

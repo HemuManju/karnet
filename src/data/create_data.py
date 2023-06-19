@@ -1,15 +1,28 @@
 import os
+import glob
+
+from ast import literal_eval
 
 from collections import deque
-
+import natsort
 from subprocess import Popen
 import atexit
 
 import numpy as np
+import pandas as pd
 import deepdish as dd
 from skimage.io import imread_collection
 
+import cv2
+
 import webdataset as wds
+import jsonpickle
+
+from bagpy import bagreader
+
+from PIL import Image as im
+
+from .utils import get_nonexistant_shard_path
 
 
 def start_shell_command_and_wait(command):
@@ -101,4 +114,170 @@ def create_regression_data(dataset):
     print(features.shape)
 
     return np.array(steering), features
+
+
+def decompress_udacity_data(config, file_name):
+    read_path = config['real_data_path'] + f'raw/{file_name}.bag'
+    bag = bagreader(read_path)
+    topics = [
+        '/vehicle/steering_report',
+        '/vehicle/throttle_report',
+        '/vehicle/brake_report',
+        '/imu/data',
+        '/fix',
+        '/center_camera/image_color/compressed',
+        '/time_reference',
+        '/vehicle/filtered_accel',
+        '/vehicle/gps/vel',
+    ]
+
+    for topic in topics:
+        bag.message_by_topic(topic)
+
+    return None
+
+
+def read_udacity_data(config):
+    # file_name = 'el_camino_south'
+    file_name = 'CH03_002'
+    read_path = config['real_data_path'] + 'raw/' + file_name
+
+    # Read only if the directory is not already present
+    if not os.path.isdir(read_path):
+        decompress_udacity_data(config, file_name)
+
+    # Combine throttle, steer, and brake
+    topics = {
+        '/vehicle-steering_report': ['Time', 'steering_wheel_angle'],
+        '/vehicle-throttle_report': ['Time', 'pedal_output'],
+        '/vehicle-brake_report': ['Time', 'pedal_output'],
+        '/fix': ['Time', 'latitude', 'longitude', 'altitude'],
+        '/imu-data': [
+            'Time',
+            'orientation.x',
+            'orientation.y',
+            'orientation.z',
+            'orientation.w',
+            'angular_velocity.x',
+            'angular_velocity.y',
+            'angular_velocity.z',
+            'linear_acceleration.x',
+            'linear_acceleration.y',
+            'linear_acceleration.z',
+        ],
+        '/vehicle-gps-vel': ['Time', 'twist.linear.x', 'twist.linear.y'],
+    }
+
+    # Read the image data
+    chunk_id = 0
+    for left in pd.read_csv(
+        read_path + '/center_camera-image_color-compressed.csv', chunksize=6250
+    ):
+        temp = left[['Time', 'data']]
+        # Time synchronize the data using pandas 'merge_asof'
+        for topic_path, columns in topics.items():
+            right = pd.read_csv(read_path + topic_path + '.csv')[columns]
+            temp = pd.merge_asof(temp, right, on='Time', direction="nearest")
+
+        temp.to_csv(f'data/processed/{file_name}_{chunk_id}.csv')
+        chunk_id += 1
+    return None
+
+
+def convert_to_webdataset(config):
+    read_path = config['real_data_path']
+    path_to_file = read_path + 'processed/real_data' + '_%06d.tar'
+    write_path, shard_start = get_nonexistant_shard_path(path_to_file)
+
+    # Create sink
+    sink = wds.ShardWriter(
+        write_path, maxcount=6250, compress=True, start_shard=shard_start
+    )
+
+    # find all the files
+    base_name = 'CH03'
+
+    files = natsort.natsorted(glob.glob(f'data/processed/{base_name}_*.csv'))
+
+    for f in files:
+        # Read the pandas dataframe
+        df = pd.read_csv(f)
+
+        for index, row in df.iterrows():
+
+            t = literal_eval(row['data'])
+            buf = np.ndarray(shape=(1, len(t)), dtype=np.uint8, buffer=t)
+            cv_image = cv2.imdecode(buf, cv2.IMREAD_ANYCOLOR)
+            image_data = im.fromarray(cv_image).resize(size=(256, 256))
+
+            data = {
+                'velocity': [
+                    float(row['twist.linear.x']),
+                    float(row['twist.linear.y']),
+                ],
+                'gnss': [
+                    float(row['latitude']),
+                    float(row['longitude']),
+                    float(row['altitude']),
+                ],
+                'quaternion': [
+                    float(row['orientation.x']),
+                    float(row['orientation.y']),
+                    float(row['orientation.z']),
+                    float(row['orientation.w']),
+                ],
+                'imu': [
+                    float(row['linear_acceleration.x']),
+                    float(row['linear_acceleration.y']),
+                    float(row['linear_acceleration.z']),
+                    float(row['angular_velocity.x']),
+                    float(row['angular_velocity.y']),
+                    float(row['angular_velocity.z']),
+                ],
+                'steering': float(row['steering_wheel_angle']),
+                'throttle': float(row['pedal_output_x']),
+                'brake': float(row['pedal_output_x']),
+            }
+
+            d = {
+                "__key__": "sample%06d" % index,
+                'jpeg': image_data,
+                'json': jsonpickle.encode(data),
+            }
+            sink.write(d)
+    sink.close()
+
+
+def read_boreas_gps_imu_data(config):
+    read_path = config['real_data_path'] + 'sunny/'
+
+    gps = pd.read_csv(read_path + 'applanix/gps_post_process.csv')
+    path_to_file = read_path + 'processed/real_data' + '_%06d.tar'
+    write_path = get_nonexistant_path(path_to_file)
+
+    sink = wds.ShardWriter(write_path, maxcount=191908, compress=True)
+
+    for index, row in gps.iterrows():
+        data = {
+            'velocity': [float(row['vel_east']), float(row['vel_north'])],
+            'gnss': [
+                float(row['latitude']),
+                float(row['longitude']),
+                float(row['altitude']),
+            ],
+            'yaw': float(row['heading']),
+            'location': [float(row['easting']), float(row['northing']), 0.0],
+            'imu': [
+                float(row['accelz']),
+                float(row['accely']),
+                float(row['accelx']),
+                float(row['angvel_z']),
+                float(row['angvel_y']),
+                float(row['angvel_x']),
+            ],
+        }
+
+        d = {"__key__": "sample%06d" % index, 'json': jsonpickle.encode(data)}
+        sink.write(d)
+    sink.close()
 
