@@ -54,11 +54,11 @@ data_split:
 
 ##-----------------------------------------------------#
 # Path(s)
-slurm: False
+slurm: True
 # raw_data_path: '/home/hemanth/Desktop/carla_data/Town01_NAVIGATION/'
 raw_data_path: '../carla_data/Town01_NAVIGATION/'
-real_data_path: '/home/hemanth/Desktop/real-data/processed/'
-# real_data_path: '../real-data/processed/'
+# real_data_path: '/home/hemanth/Desktop/real-data/'
+real_data_path: '../real-data/'
 logs_path: 'logs/'
 train_data_path: 'data/raw/train'
 val_data_path: 'data/raw/validation'

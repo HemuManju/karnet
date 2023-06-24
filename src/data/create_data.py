@@ -179,7 +179,9 @@ def read_udacity_data(config):
             right = pd.read_csv(read_path + topic_path + '.csv')[columns]
             temp = pd.merge_asof(temp, right, on='Time', direction="nearest")
 
-        temp.to_csv(f'data/processed/{file_name}_{chunk_id}.csv')
+        temp.to_csv(
+            f'/home/hemanth/Desktop/real-data/raw/{file_name}/{file_name}_{chunk_id}.csv'
+        )
         chunk_id += 1
     return None
 
@@ -195,15 +197,21 @@ def convert_to_webdataset(config):
     )
 
     # find all the files
-    base_name = 'CH03'
+    base_name = 'CH03_002'
 
-    files = natsort.natsorted(glob.glob(f'data/processed/{base_name}_*.csv'))
+    files = natsort.natsorted(
+        glob.glob(f'/home/hemanth/Desktop/real-data/raw/{base_name}/{base_name}_*.csv')
+    )
+    index = 0
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(nrows=1, ncols=1)
 
     for f in files:
         # Read the pandas dataframe
         df = pd.read_csv(f)
 
-        for index, row in df.iterrows():
+        for _, row in df.iterrows():
 
             t = literal_eval(row['data'])
             buf = np.ndarray(shape=(1, len(t)), dtype=np.uint8, buffer=t)
@@ -240,11 +248,12 @@ def convert_to_webdataset(config):
             }
 
             d = {
-                "__key__": "sample%06d" % index,
+                "__key__": f"sample_{index}",
                 'jpeg': image_data,
                 'json': jsonpickle.encode(data),
             }
             sink.write(d)
+            index += 1
     sink.close()
 
 

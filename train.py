@@ -6,15 +6,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-import webdataset as wbs
-
 import torch
 import pytorch_lightning as pl
 
 from benchmark.core.carla_core import CarlaCore
 from benchmark.core.carla_core import kill_all_servers
 
-from src.data.create_data import read_udacity_data, convert_to_webdataset
 
 from src.dataset.sample_processors import (
     one_image_samples,
@@ -53,19 +50,33 @@ from src.evaluate.experiments import CORL2017
 from benchmark.run_benchmark import Benchmarking
 from benchmark.summary import summarize
 
-from tests.test_loss import test_ssim_loss_function
 
 import yaml
 from utils import skip_run, get_num_gpus
 
-from pyboreas import BoreasDataset
 
 with skip_run('skip', 'create_webdataset') as check, check():
+    from src.data.create_data import read_udacity_data, convert_to_webdataset
+
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     # Already created
     # read_udacity_data(cfg)
     convert_to_webdataset(cfg)
+
+with skip_run('skip', 'verify_dataset') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/autoencoder.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/AUTOENCODER'
+
+    # Dataloader
+    data_loader = get_webdataset_real_data_iterator(cfg, one_image_samples)
+    fig, ax = plt.subplots(nrows=1, ncols=1)
+
+    for x, y in data_loader['training']:
+        show_image(x[0], ax)
+        plt.pause(0.1)
+        plt.cla()
 
 with skip_run('skip', 'karnet_autoencoder_training') as check, check():
     # Load the configuration
@@ -140,11 +151,11 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Setup
-    read_path = f'logs/2022-11-09/AUTOENCODER/last.ckpt'
+    read_path = f'logs/2023-06-19/AUTOENCODER/last.ckpt'
     net = CNNAutoEncoder(cfg)
 
     # Dataloader
-    data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
+    data_loader = get_webdataset_real_data_iterator(cfg, one_image_samples)
     model = Autoencoder.load_from_checkpoint(
         read_path, hparams=cfg, net=net, data_loader=data_loader,
     )
@@ -321,12 +332,6 @@ with skip_run('skip', 'kalman_analysis') as check, check():
     navigation_type = cfg['navigation_types'][0]
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
-    # Dataset reader
-    reader = WebDatasetReader(
-        cfg,
-        file_path=f'/home/hemanth/Desktop/real-data/sunny/processed/real_data_000000.tar',
-    )
-    dataset = reader.get_dataset(concat_n_samples=1)
     predicted = []
     location = []
     last_location = None
@@ -337,29 +342,42 @@ with skip_run('skip', 'kalman_analysis') as check, check():
     # Kalman filter
     ekf = ExtendedKalmanFilter(cfg)
 
-    for i, data in enumerate(dataset):
-        data = data['json'][0]
+    # Dataset reader
+    for i in range(0, 41):
+        if i <= 9:
+            reader = WebDatasetReader(
+                cfg,
+                file_path=f'/home/hemanth/Desktop/real-data/processed/real_data_00000{i}.tar',
+            )
+        else:
+            reader = WebDatasetReader(
+                cfg,
+                file_path=f'/home/hemanth/Desktop/real-data/processed/real_data_0000{i}.tar',
+            )
 
-        # EKF update step
-        corrected, predict = ekf.update(data)
+        dataset = reader.get_dataset(concat_n_samples=1)
 
-        location.append(data['location'])
-        test.append(data['gnss'])
-        predicted.append(predict[0:2])
-        velocity.append(predict[2:4])
-        velocity_true.append(data['velocity'])
+        for i, data in enumerate(dataset):
+            data = data['json'][0]
 
-        if i > 25000:
-            break
+            # EKF update step
+            corrected, predict = ekf.update(data)
+            t = data['gnss']
+            location.append(ekf.gnss_to_xyz(t[0], t[1], t[2]))
+            test.append(ekf.gnss_to_xyz(t[0], t[1], t[2]))
+            predicted.append(predict[0:2])
+            velocity.append(predict[2:4])
+            velocity_true.append(data['velocity'])
+
+            # if i > 50000:
+            #     break
 
     location = np.array(location)
-    test = np.array(test)
-    test = (test - test[0, :]) * 1e7 / 2 + np.array([-0.14831, -4.30229, 0])
     predicted = np.array(predicted)
     velocity = np.array(velocity)
     velocity_true = np.array(velocity_true)
 
-    plt.scatter(location[:, 0] / 400, location[:, 1] / 400, label='Ground Truth')
+    plt.scatter(location[:, 0] / 35200, location[:, 1] / 35200, label='Ground Truth')
     plt.scatter(predicted[:, 0], predicted[:, 1], s=10, marker='s', label='Predicted')
     plt.xlabel('x position (m)')
     plt.ylabel('y position (m)')
@@ -367,14 +385,14 @@ with skip_run('skip', 'kalman_analysis') as check, check():
     plt.show()
     plt.scatter(np.arange(0, velocity.shape[0]), velocity[:, 0], label='Predicted')
     plt.scatter(
-        np.arange(0, velocity.shape[0]), velocity_true[:, 0] / 20, label='Ground Truth'
+        np.arange(0, velocity.shape[0]), velocity_true[:, 0] / 15, label='Ground Truth'
     )
     plt.legend()
     plt.show()
 
     plt.scatter(np.arange(0, velocity.shape[0]), velocity[:, 1], label='Predicted')
     plt.scatter(
-        np.arange(0, velocity.shape[0]), velocity_true[:, 1] / 20, label='Ground Truth'
+        np.arange(0, velocity.shape[0]), velocity_true[:, 1] / 15, label='Ground Truth'
     )
     plt.legend()
     plt.show()

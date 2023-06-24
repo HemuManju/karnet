@@ -33,11 +33,23 @@ class RotationTransform:
         return transforms.functional.rotate(x, self.angles)
 
 
+class FlipTransform:
+    """Rotate by one of the given angles."""
+
+    def __init__(self):
+        return None
+
+    def __call__(self, x):
+        return transforms.functional.vflip(x)
+
+
 def get_preprocessing_pipeline(config):
 
     preproc = transforms.Compose(
         [
-            RotationTransform(angles=-90),
+            # Flip is necessary for real data only
+            FlipTransform(),
+            # RotationTransform(angles=-180),
             transforms.Grayscale(),
             transforms.Resize(
                 size=(config['image_resize'][1], config['image_resize'][2])

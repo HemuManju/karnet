@@ -36,12 +36,12 @@ class ExtendedKalmanFilter:
         self.g = np.array([0, 0, -9.81]).reshape(3, 1)
 
         # Sensor noise variances
-        self.var_imu_acc = 0.00005
-        self.var_imu_gyro = 0.00001
+        self.var_imu_acc = 0.01
+        self.var_imu_gyro = 0.01
 
         # Motion model noise
-        self.var_gnss = np.eye(3) * 0.00005
-        self.var_v = np.eye(3) * 0.00001
+        self.var_gnss = np.eye(3) * 0.001
+        self.var_v = np.eye(3) * 0.001
 
         self.measure_var = np.eye(6)
         self.measure_var[0:3, 0:3] = self.var_gnss
@@ -62,6 +62,8 @@ class ExtendedKalmanFilter:
         self.town = town
 
         self.last_location = None
+
+        self.gnss_lat_ref, self.gnss_long_ref = self.get_latlon_ref(self.town)
 
     def is_initialized(self):
         return self.initialized
@@ -133,7 +135,7 @@ class ExtendedKalmanFilter:
         # This wasn't in the original method, but seems to be necessary.
         y *= -1
 
-        return x, y, altitude
+        return [x, y, altitude]
 
     def get_latlon_ref(self, town):
         """
@@ -141,23 +143,7 @@ class ExtendedKalmanFilter:
         :return: tuple with lat and lon coordinates
         https://github.com/carla-simulator/scenario_runner/blob/master/srunner/tools/route_manipulation.py
         """
-        xodr_path = f'data/Town01.xodr'
-        tree = ET.parse(xodr_path)
-
-        # default reference
-        lat_ref = 42.0
-        lon_ref = 2.0
-
-        for opendrive in tree.iter("OpenDRIVE"):
-            for header in opendrive.iter("header"):
-                for georef in header.iter("geoReference"):
-                    if georef.text:
-                        str_list = georef.text.split(' ')
-                        for item in str_list:
-                            if '+lat_0' in item:
-                                lat_ref = float(item.split('=')[1])
-                            if '+lon_0' in item:
-                                lon_ref = float(item.split('=')[1])
+        lat_ref, lon_ref = 37.399829864502, -122.108062744141
         return lat_ref, lon_ref
 
     def initialize_with_true_data(self, data):
@@ -176,18 +162,10 @@ class ExtendedKalmanFilter:
         :type gnss: list
         """
 
-        # Lat long reference
-        self.gnss_lat_ref, self.gnss_long_ref = data['location'][0], data['location'][1]
-
-        euler = [0, 0, 0]
-
-        # Roll pitch and yaw
-        euler[0], euler[1] = 0.0, 0.0
-
-        euler[2] = data['yaw']
-
-        self.p[:, 0] = data['location']
-        self.q[:, 0] = Quaternion(euler=euler).to_numpy()
+        gnss = data['gnss']
+        self.p[:, 0] = self.gnss_to_xyz(gnss[0], gnss[1], gnss[2])
+        q = data['quaternion']
+        self.q[:, 0] = Quaternion(x=q[0], y=q[1], z=q[2], w=q[3]).to_numpy()
 
         # Low uncertainty in position estimation and high in orientation and
         # velocity
@@ -287,7 +265,7 @@ class ExtendedKalmanFilter:
             gnss = data['gnss']['values']
         except (IndexError, TypeError):
             gnss = data['gnss']
-        location = data['location']
+        location = self.gnss_to_xyz(gnss[0], gnss[1], gnss[2])
         v = data['velocity']
 
         # Kalman gain
@@ -315,8 +293,16 @@ class ExtendedKalmanFilter:
     def extract_states(self):
 
         if self.config['clip_kalman']:
-            position = np.clip(self.p[0:2], a_min=-400, a_max=400)
-            velocity = np.clip(self.v[0:2], a_min=-20, a_max=20)
+            position = np.clip(
+                self.p[0:2],
+                a_min=-self.config['max_position'],
+                a_max=self.config['max_position'],
+            )
+            velocity = np.clip(
+                self.v[0:2],
+                a_min=-self.config['max_velocity'],
+                a_max=self.config['max_velocity'],
+            )
         else:
             position = self.p[0:2]
             velocity = self.v[0:2]
@@ -346,12 +332,12 @@ class ExtendedKalmanFilter:
         self.g = np.array([0, 0, -9.81]).reshape(3, 1)
 
         # Sensor noise variances
-        self.var_imu_acc = 0.00005
-        self.var_imu_gyro = 0.00001
+        self.var_imu_acc = 0.01
+        self.var_imu_gyro = 0.01
 
         # Motion model noise
-        self.var_gnss = np.eye(3) * 0.00005
-        self.var_v = np.eye(3) * 0.00001
+        self.var_gnss = np.eye(3) * 0.001
+        self.var_v = np.eye(3) * 0.001
 
         self.measure_var = np.eye(6)
         self.measure_var[0:3, 0:3] = self.var_gnss
@@ -372,15 +358,18 @@ class ExtendedKalmanFilter:
         self.last_location = None
 
     def update(self, data):
+        gnss = data['gnss']
         if self.last_location is None:
             dist = 0
         else:
+
+            new_location = self.gnss_to_xyz(gnss[0], gnss[1], gnss[2])
             dist = np.linalg.norm(
-                np.array(self.last_location[0:2]) - np.array(data['location'][0:2])
+                np.array(self.last_location[0:2]) - np.array(new_location[0:2])
             )
 
         if self.last_location is None:
-            self.last_location = data['location']
+            self.last_location = self.gnss_to_xyz(gnss[0], gnss[1], gnss[2])
 
         if not self.is_initialized():
             self.initialize_with_true_data(data)
@@ -388,7 +377,7 @@ class ExtendedKalmanFilter:
         if dist > 20:
             self.initialize_with_true_data(data)
 
-        self.last_location = data['location']
+        self.last_location = self.gnss_to_xyz(gnss[0], gnss[1], gnss[2])
 
         # Correction and Prediction
         try:

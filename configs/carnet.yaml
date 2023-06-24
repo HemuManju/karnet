@@ -39,8 +39,8 @@ action_processing_id: 6 # 1, 2, 3, 4, 5, 6
 use_scheduler: True
 normalize_kalman: True
 clip_kalman: True
-max_position: 400
-max_velocity: 20
+max_position: 35200
+max_velocity: 15
 
 ##-----------------------------------------------------#
 # Data splitting scheme
@@ -69,7 +69,7 @@ data_split:
 # Path(s)
 # raw_data_path: '/home/hemanth/Desktop/carla-data/Town01_NAVIGATION/'
 raw_data_path: '../carla-data/Town01_NAVIGATION/'
-real_data_path: '/home/hemanth/Desktop/real-data/processed/'
+real_data_path: '/home/hemanth/Desktop/real-data/'
 # real_data_path: '../real-data/processed/'
 logs_path: 'logs/'
 train_data_path: 'data/raw/train'
