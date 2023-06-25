@@ -33,6 +33,8 @@ from src.architectures.nets import (
     CNNAutoEncoder,
     CIRLCARNet,
     AutoRegressorBranchNet,
+    ActionNet,
+    ImitationKARNet,
 )
 
 
@@ -204,13 +206,12 @@ with skip_run('skip', 'karnet_training') as check, check():
     cnn_autoencoder = CNNAutoEncoder(cfg)
     read_path = 'logs/2022-11-09/AUTOENCODER/last.ckpt'
     cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
-    # cnn_autoencoder(cnn_autoencoder.example_input_array)
 
     net = CARNet(cfg, cnn_autoencoder)
     # net(net.example_input_array)
 
     # Dataloader
-    data_loader = get_webdataset_data_iterator(cfg, rnn_samples)
+    data_loader = get_webdataset_real_data_iterator(cfg, rnn_samples)
     if cfg['check_point_path'] is None:
         model = RNNEncoder(cfg, net, data_loader)
     else:
@@ -218,16 +219,28 @@ with skip_run('skip', 'karnet_training') as check, check():
             cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
         )
     # Trainer
-    trainer = pl.Trainer(
-        gpus=gpus,
-        max_epochs=cfg['NUM_EPOCHS'],
-        logger=logger,
-        callbacks=[checkpoint_callback],
-        enable_progress_bar=False,
-    )
+    if cfg['slurm']:
+        trainer = pl.Trainer(
+            accelerator='gpu',
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=False,
+            strategy="ddp",
+            num_nodes=1,
+        )
+    else:
+        trainer = pl.Trainer(
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=True,
+        )
     trainer.fit(model)
 
-with skip_run('skip', 'verify_carnet') as check, check():
+with skip_run('skip', 'verify_karnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
@@ -277,50 +290,53 @@ with skip_run('skip', 'verify_carnet') as check, check():
 
 with skip_run('skip', 'dataset_analysis') as check, check():
     # Load the configuration
-    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/KALMAN'
 
     # Navigation type
     navigation_type = cfg['navigation_types'][0]
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
+    steering = []
+    throttle = []
+    brake = []
+
     # Dataset reader
-    reader = WebDatasetReader(
-        cfg,
-        file_path=f'/home/hemanth/Desktop/carla_data_new/Town01_NAVIGATION/{navigation_type}/Town01_HardRainNoon_cautious_000002.tar',
-    )
-    dataset = reader.get_dataset(concat_n_samples=1)
-    waypoint_data = []
-    location = []
-    reprojected = []
-    direction = []
+    for i in range(0, 41):
+        if i <= 9:
+            reader = WebDatasetReader(
+                cfg,
+                file_path=f'/home/hemanth/Desktop/real-data/processed/real_data_00000{i}.tar',
+            )
+        else:
+            reader = WebDatasetReader(
+                cfg,
+                file_path=f'/home/hemanth/Desktop/real-data/processed/real_data_0000{i}.tar',
+            )
 
-    for i, data in enumerate(dataset):
-        data = data['json'][0]
-        waypoints = data['waypoints']
-        direction.append(np.array(data['moving_direction']))
-        projected_ego = imitation_dataset.project_to_ego_frame(data)
-        projected_world = imitation_dataset.project_to_world_frame(projected_ego, data)
-        reprojected.append(projected_world)
-        waypoint_data.append(waypoints)
-        location.append(data['location'])
-        if i > 1000:
-            break
+        dataset = reader.get_dataset(concat_n_samples=1)
 
-    test_way = np.array(sum(waypoint_data, []))
-    directions = np.array(direction)
-    test_loc = np.array(location)
-    reproj_test = np.concatenate(reprojected)
-    plt.quiver(
-        test_loc[:, 0],
-        test_loc[:, 1],
-        directions[:, 0],
-        directions[:, 1],
-        linewidths=10,
-    )
-    plt.scatter(test_way[:, 0], test_way[:, 1])
-    # plt.scatter(test_loc[:, 0], test_loc[:, 1], marker='s')
-    plt.scatter(reproj_test[:, 0], reproj_test[:, 1], s=10, marker='s')
+        for i, data in enumerate(dataset):
+            data = data['json'][0]
+
+            steering.append(data['steering'])
+            throttle.append(data['throttle'])
+            brake.append(data['brake'])
+
+    steering = np.array(steering)
+    throttle = np.array(throttle)
+    brake = np.array(brake)
+    print(np.histogram_bin_edges(steering, bins=3))
+    print(np.histogram_bin_edges(throttle, bins=3))
+    print(np.histogram_bin_edges(brake, bins=3))
+
+    plt.hist(steering, bins=3)
+    plt.show()
+
+    plt.hist(throttle, bins=3)
+    plt.show()
+
+    plt.hist(brake, bins=3)
     plt.show()
 
 with skip_run('skip', 'kalman_analysis') as check, check():
@@ -397,10 +413,10 @@ with skip_run('skip', 'kalman_analysis') as check, check():
     plt.legend()
     plt.show()
 
-with skip_run('skip', 'carnet_with_kalman') as check, check():
+with skip_run('skip', 'karnet_with_kalman') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
-    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/CARNET_KALMAN'
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/KARNET_KALMAN'
     cfg['message'] = 'CARNet training with kalman update within the network'
 
     # Random seed
@@ -430,15 +446,15 @@ with skip_run('skip', 'carnet_with_kalman') as check, check():
 
     # # Setup
     cnn_autoencoder = CNNAutoEncoder(cfg)
-    read_path = 'logs/2022-11-09/AUTOENCODER/last.ckpt'
-    cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
+    # read_path = 'logs/2022-11-09/AUTOENCODER/last.ckpt'
+    # cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
     # cnn_autoencoder(cnn_autoencoder.example_input_array)
 
     net = CARNetExtended(cfg, cnn_autoencoder)
     # net(net.example_input_array)
 
     # Dataloader
-    data_loader = get_webdataset_data_iterator(cfg, rnn_samples_with_kalman)
+    data_loader = get_webdataset_real_data_iterator(cfg, rnn_samples_with_kalman)
     if cfg['check_point_path'] is None:
         model = KalmanRNNEncoder(cfg, net, data_loader)
     else:
@@ -446,16 +462,28 @@ with skip_run('skip', 'carnet_with_kalman') as check, check():
             cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
         )
     # Trainer
-    trainer = pl.Trainer(
-        gpus=gpus,
-        max_epochs=cfg['NUM_EPOCHS'],
-        logger=logger,
-        callbacks=[checkpoint_callback],
-        enable_progress_bar=False,
-    )
+    if cfg['slurm']:
+        trainer = pl.Trainer(
+            accelerator='gpu',
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=False,
+            strategy="ddp",
+            num_nodes=1,
+        )
+    else:
+        trainer = pl.Trainer(
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=True,
+        )
     trainer.fit(model)
 
-with skip_run('skip', 'imitation_with_carnet') as check, check():
+with skip_run('skip', 'imitation_with_karnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION'
@@ -521,7 +549,7 @@ with skip_run('skip', 'imitation_with_carnet') as check, check():
     )
     trainer.fit(model)
 
-with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
+with skip_run('skip', 'imitation_with_kalman_karnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'
@@ -551,15 +579,12 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
     read_path = 'logs/2023-01-03/CARNET_KALMAN/last.ckpt'
     cnn_autoencoder = CNNAutoEncoder(cfg)
     carnet = CARNetExtended(cfg, cnn_autoencoder)
-    carnet = load_checkpoint(carnet, checkpoint_path=read_path)
+    # carnet = load_checkpoint(carnet, checkpoint_path=read_path)
     cfg['carnet'] = carnet
 
     # Action net
-    action_net = AutoRegressorBranchNet(dropout=0, hparams=cfg)
-    # read_path = 'logs/action_net.pt'
-    # action_net = load_checkpoint(
-    #     action_net, checkpoint_path=read_path, only_weights=True
-    # )
+    action_net = ActionNet(layer_size=512, output_size=9, dropout=0)
+
     cfg['action_net'] = action_net
 
     # Kalmnn filter
@@ -568,11 +593,13 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
     # Testing
     # reconstructed, rnn_embeddings = carnet(carnet.example_input_array)
 
-    net = CIRLCARNet(cfg)
-    # waypoint, speed = net(net.example_input_array, net.example_command)
+    net = ImitationKARNet(cfg)
+    output = net(net.example_input_array, net.example_command, net.example_kalman)
 
     # Dataloader
     data_loader = imitation_dataset.webdataset_data_iterator(cfg)
+    afaf
+
     if cfg['check_point_path'] is None:
         model = Imitation(cfg, net, data_loader)
     else:
@@ -580,13 +607,25 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
             cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
         )
     # Trainer
-    trainer = pl.Trainer(
-        gpus=gpus,
-        max_epochs=cfg['NUM_EPOCHS'],
-        logger=logger,
-        callbacks=[checkpoint_callback],
-        enable_progress_bar=False,
-    )
+    if cfg['slurm']:
+        trainer = pl.Trainer(
+            accelerator='gpu',
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=False,
+            strategy="ddp",
+            num_nodes=1,
+        )
+    else:
+        trainer = pl.Trainer(
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=True,
+        )
     trainer.fit(model)
 
 with skip_run('skip', 'verify_carnet_imitation') as check, check():

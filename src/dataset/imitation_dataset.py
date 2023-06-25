@@ -13,6 +13,7 @@ from .preprocessing import get_preprocessing_pipeline
 from .utils import (
     rotate,
     get_dataset_paths,
+    get_real_dataset_paths,
     generate_seqs,
     find_in_between_angle,
     show_image,
@@ -55,6 +56,17 @@ def post_process_action(data, config):
         ego_frame_waypoints = project_to_ego_frame(data)
         points = ego_frame_waypoints[0:n_waypoints, :].astype(np.float32)
         action = (torch.from_numpy(points), torch.tensor(data['speed']))
+
+    elif config['action_processing_id'] == 7:
+        keys = ['steering', 'throttle']
+        bins = {
+            'steering': np.array([-8.30253124, -2.75180244, 2.79892635, 8.34965515]),
+            'throttle': np.array([0.14995041, 0.25610743, 0.36226444, 0.46842146]),
+        }
+
+        print(data['steering'])
+        afaf
+
     else:
         action = torch.tensor([data['throttle'], data['steer'], data['brake']])
 
@@ -199,10 +211,13 @@ def concatenate_samples(samples, config):
 
     last_data = samples[-1]['json']
 
-    if last_data['modified_direction'] in [-1, 5, 6]:
-        command = 4
-    else:
-        command = last_data['modified_direction']
+    try:
+        if last_data['modified_direction'] in [-1, 5, 6]:
+            command = 4
+        else:
+            command = last_data['modified_direction']
+    except KeyError:
+        command = -1
 
     # Post processing according to the ID
     action = post_process_action(last_data, config)
@@ -261,8 +276,12 @@ def webdataset_data_test_iterator(config, file_path):
 
 
 def webdataset_data_iterator(config):
-    # Get dataset path(s)
-    paths = get_dataset_paths(config)
+
+    if config['REAL_DATASET']:
+        paths = get_real_dataset_paths(config)
+    else:
+        # Get dataset path(s)
+        paths = get_dataset_paths(config)
 
     # Parameters
     BATCH_SIZE = config['BATCH_SIZE']

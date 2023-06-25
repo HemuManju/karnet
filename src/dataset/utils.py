@@ -141,7 +141,11 @@ def find_tar_files(read_path, pattern):
 def get_real_dataset_paths(config, shuffle=False):
     paths = {}
     data_split = config['data_split']
-    read_path = config['real_data_path'] + '/processed/'
+    if config['slurm']:
+        read_path = config['real_data_path']
+    else:
+        read_path = config['real_data_path'] + '/processed/'
+
     tar_files = find_tar_files(read_path, pattern='real_data_')
 
     train_idx, val_idx = train_test_split(

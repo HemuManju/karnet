@@ -244,7 +244,7 @@ def convert_to_webdataset(config):
                 ],
                 'steering': float(row['steering_wheel_angle']),
                 'throttle': float(row['pedal_output_x']),
-                'brake': float(row['pedal_output_x']),
+                'brake': float(row['pedal_output_y']),
             }
 
             d = {

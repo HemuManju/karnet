@@ -6,6 +6,7 @@ LEARNING_RATE: 0.001
 DROP_OUT: 0.10
 TEST_SIZE: 0.15
 VALID_SIZE: 0.15
+REAL_DATASET: True
 
 ##-----------------------------------------------------#
 # Data Parameters
@@ -35,7 +36,7 @@ crop_image_resize: [1, 78, 128]
 image_resize: [1, 256, 256]
 alpha: 0.75
 beta: 0.1
-action_processing_id: 6 # 1, 2, 3, 4, 5, 6
+action_processing_id: 7 # 1, 2, 3, 4, 5, 6, 7
 use_scheduler: True
 normalize_kalman: True
 clip_kalman: True
@@ -67,6 +68,7 @@ data_split:
 
 ##-----------------------------------------------------#
 # Path(s)
+slurm: False
 # raw_data_path: '/home/hemanth/Desktop/carla-data/Town01_NAVIGATION/'
 raw_data_path: '../carla-data/Town01_NAVIGATION/'
 real_data_path: '/home/hemanth/Desktop/real-data/'
