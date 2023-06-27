@@ -14,7 +14,7 @@ predict_length: 0
 n_actions: 3
 n_classes: 23
 frame_skip: 4
-number_workers: 8
+number_workers: 0
 
 ##-----------------------------------------------------#
 # CARNet Parameters
@@ -54,11 +54,11 @@ data_split:
 
 ##-----------------------------------------------------#
 # Path(s)
-slurm: True
+slurm: False
 # raw_data_path: '/home/hemanth/Desktop/carla_data/Town01_NAVIGATION/'
 raw_data_path: '../carla_data/Town01_NAVIGATION/'
-# real_data_path: '/home/hemanth/Desktop/real-data/'
-real_data_path: '../real-data/'
+real_data_path: '/home/hemanth/Desktop/real-data/'
+# real_data_path: '../real-data/'
 logs_path: 'logs/'
 train_data_path: 'data/raw/train'
 val_data_path: 'data/raw/validation'

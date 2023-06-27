@@ -58,14 +58,21 @@ def post_process_action(data, config):
         action = (torch.from_numpy(points), torch.tensor(data['speed']))
 
     elif config['action_processing_id'] == 7:
-        keys = ['steering', 'throttle']
         bins = {
             'steering': np.array([-8.30253124, -2.75180244, 2.79892635, 8.34965515]),
             'throttle': np.array([0.14995041, 0.25610743, 0.36226444, 0.46842146]),
         }
+        # steering: [-8.30253124 -6.6373126  -4.97209396 -3.30687532 -1.64165668  0.02356195 1.68878059  3.35399923  5.01921787  6.68443651  8.34965515]
+        steering_class = np.digitize(data['steering'], bins['steering'])
+        throttle_class = np.digitize(data['throttle'], bins['throttle'])
 
-        print(data['steering'])
-        afaf
+        # Final class ID
+        action_ind = (steering_class) * 4 + (throttle_class)
+
+        if isinstance(action_ind, np.int64):
+            action_ind = np.asarray(action_ind)
+
+        action = torch.from_numpy(action_ind).long()
 
     else:
         action = torch.tensor([data['throttle'], data['steer'], data['brake']])

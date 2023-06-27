@@ -410,7 +410,10 @@ class CARNetExtended(pl.LightningModule):
         # Parameters
         image_size = hparams['image_resize']
         latent_size = hparams['latent_size']
-        self.example_input_array = torch.randn((2, 4, *image_size))
+        self.time_steps = hparams['seq_length'] - 1
+        self.example_input_array = torch.randn((5, self.time_steps, *image_size))
+        self.example_command = torch.tensor([1, 0, 2, 3, 1])
+        self.example_kalman = torch.rand((5, 3, 1, 2, 4))
 
         # Encoder and decoder
         self.cnn_autoencoder = cnn_autoencoder

@@ -38,7 +38,7 @@ from src.architectures.nets import (
 )
 
 
-from src.models.imitation import Imitation
+from src.models.imitation import Imitation, ImitationClassification
 from src.models.encoding import (
     Autoencoder,
     RNNEncoder,
@@ -153,7 +153,7 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
     cfg['raw_data_path'] = cfg['raw_data_path'] + f'/{navigation_type}'
 
     # Setup
-    read_path = f'logs/2023-06-19/AUTOENCODER/last.ckpt'
+    read_path = f'logs/2023-06-24/AUTOENCODER/autoencoder-v3.ckpt'
     net = CNNAutoEncoder(cfg)
 
     # Dataloader
@@ -204,7 +204,7 @@ with skip_run('skip', 'karnet_training') as check, check():
 
     # Setup
     cnn_autoencoder = CNNAutoEncoder(cfg)
-    read_path = 'logs/2022-11-09/AUTOENCODER/last.ckpt'
+    read_path = 'logs/2023-06-24/AUTOENCODER/last.ckpt'
     cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
 
     net = CARNet(cfg, cnn_autoencoder)
@@ -326,11 +326,11 @@ with skip_run('skip', 'dataset_analysis') as check, check():
     steering = np.array(steering)
     throttle = np.array(throttle)
     brake = np.array(brake)
-    print(np.histogram_bin_edges(steering, bins=3))
+    print(np.histogram_bin_edges(steering, bins=10))
     print(np.histogram_bin_edges(throttle, bins=3))
     print(np.histogram_bin_edges(brake, bins=3))
 
-    plt.hist(steering, bins=3)
+    plt.hist(steering, bins=10)
     plt.show()
 
     plt.hist(throttle, bins=3)
@@ -446,12 +446,11 @@ with skip_run('skip', 'karnet_with_kalman') as check, check():
 
     # # Setup
     cnn_autoencoder = CNNAutoEncoder(cfg)
-    # read_path = 'logs/2022-11-09/AUTOENCODER/last.ckpt'
-    # cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
-    # cnn_autoencoder(cnn_autoencoder.example_input_array)
+    read_path = 'logs/2023-06-24/AUTOENCODER/last.ckpt'
+    cnn_autoencoder = load_checkpoint(cnn_autoencoder, read_path)
 
     net = CARNetExtended(cfg, cnn_autoencoder)
-    # net(net.example_input_array)
+    net(net.example_input_array, net.example_kalman)
 
     # Dataloader
     data_loader = get_webdataset_real_data_iterator(cfg, rnn_samples_with_kalman)
@@ -470,7 +469,6 @@ with skip_run('skip', 'karnet_with_kalman') as check, check():
             logger=logger,
             callbacks=[checkpoint_callback],
             enable_progress_bar=False,
-            strategy="ddp",
             num_nodes=1,
         )
     else:
@@ -549,7 +547,7 @@ with skip_run('skip', 'imitation_with_karnet') as check, check():
     )
     trainer.fit(model)
 
-with skip_run('skip', 'imitation_with_kalman_karnet') as check, check():
+with skip_run('run', 'imitation_with_kalman_karnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'
@@ -583,7 +581,7 @@ with skip_run('skip', 'imitation_with_kalman_karnet') as check, check():
     cfg['carnet'] = carnet
 
     # Action net
-    action_net = ActionNet(layer_size=512, output_size=9, dropout=0)
+    action_net = ActionNet(layer_size=512, output_size=16, dropout=0)
 
     cfg['action_net'] = action_net
 
@@ -598,12 +596,11 @@ with skip_run('skip', 'imitation_with_kalman_karnet') as check, check():
 
     # Dataloader
     data_loader = imitation_dataset.webdataset_data_iterator(cfg)
-    afaf
 
     if cfg['check_point_path'] is None:
-        model = Imitation(cfg, net, data_loader)
+        model = ImitationClassification(cfg, net, data_loader)
     else:
-        model = Imitation.load_from_checkpoint(
+        model = ImitationClassification.load_from_checkpoint(
             cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
         )
     # Trainer
@@ -615,7 +612,6 @@ with skip_run('skip', 'imitation_with_kalman_karnet') as check, check():
             logger=logger,
             callbacks=[checkpoint_callback],
             enable_progress_bar=False,
-            strategy="ddp",
             num_nodes=1,
         )
     else:
