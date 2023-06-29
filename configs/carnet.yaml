@@ -68,7 +68,7 @@ data_split:
 
 ##-----------------------------------------------------#
 # Path(s)
-slurm: False
+slurm: True
 # raw_data_path: '/home/hemanth/Desktop/carla-data/Town01_NAVIGATION/'
 raw_data_path: '../carla-data/Town01_NAVIGATION/'
 real_data_path: '/home/hemanth/Desktop/real-data/'

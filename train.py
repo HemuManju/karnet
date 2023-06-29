@@ -326,7 +326,7 @@ with skip_run('skip', 'dataset_analysis') as check, check():
     steering = np.array(steering)
     throttle = np.array(throttle)
     brake = np.array(brake)
-    print(np.histogram_bin_edges(steering, bins=10))
+    print(np.histogram_bin_edges(steering, bins=3))
     print(np.histogram_bin_edges(throttle, bins=3))
     print(np.histogram_bin_edges(brake, bins=3))
 
@@ -547,7 +547,7 @@ with skip_run('skip', 'imitation_with_karnet') as check, check():
     )
     trainer.fit(model)
 
-with skip_run('run', 'imitation_with_kalman_karnet') as check, check():
+with skip_run('skip', 'imitation_with_kalman_karnet') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'
@@ -574,14 +574,14 @@ with skip_run('run', 'imitation_with_kalman_karnet') as check, check():
 
     # Setup
     # Load the backbone network
-    read_path = 'logs/2023-01-03/CARNET_KALMAN/last.ckpt'
+    read_path = 'logs/2023-06-25/KARNET_KALMAN/last.ckpt'
     cnn_autoencoder = CNNAutoEncoder(cfg)
     carnet = CARNetExtended(cfg, cnn_autoencoder)
-    # carnet = load_checkpoint(carnet, checkpoint_path=read_path)
+    carnet = load_checkpoint(carnet, checkpoint_path=read_path)
     cfg['carnet'] = carnet
 
     # Action net
-    action_net = ActionNet(layer_size=512, output_size=16, dropout=0)
+    action_net = ActionNet(layer_size=512, output_size=9, dropout=0)
 
     cfg['action_net'] = action_net
 

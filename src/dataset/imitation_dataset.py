@@ -63,15 +63,25 @@ def post_process_action(data, config):
             'throttle': np.array([0.14995041, 0.25610743, 0.36226444, 0.46842146]),
         }
         # steering: [-8.30253124 -6.6373126  -4.97209396 -3.30687532 -1.64165668  0.02356195 1.68878059  3.35399923  5.01921787  6.68443651  8.34965515]
-        steering_class = np.digitize(data['steering'], bins['steering'])
-        throttle_class = np.digitize(data['throttle'], bins['throttle'])
+
+        if isinstance(data['steering'], float):
+            data['steering'] = np.asarray(data['steering'])
+            data['throttle'] = np.asarray(data['throttle'])
+
+        steer = data['steering'].copy()
+        steer[data['steering'] >= 2.79892635] = 2
+        steer[data['steering'] <= -2.75180244] = 0
+        steer[~np.logical_or(steer == 0, steer == 2)] = 1
+
+        throttle = data['throttle'].copy()
+        throttle[data['throttle'] >= 0.36226444] = 2
+        throttle[data['throttle'] <= 0.25610743] = 0
+        throttle[~np.logical_or(throttle == 0, throttle == 2)] = 1
 
         # Final class ID
-        action_ind = (steering_class) * 4 + (throttle_class)
-
-        if isinstance(action_ind, np.int64):
-            action_ind = np.asarray(action_ind)
-
+        actions = np.vstack((throttle, steer)).T
+        # Convert actions to indices
+        action_ind = actions[:, 0] * 3 + actions[:, 1]
         action = torch.from_numpy(action_ind).long()
 
     else:

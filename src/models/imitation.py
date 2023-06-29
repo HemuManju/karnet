@@ -37,7 +37,7 @@ class ImitationClassification(pl.LightningModule):
         self.h_params = hparams
         self.net = net
         self.data_loader = data_loader
-        self.accuracy = torchmetrics.Accuracy(task="multiclass", num_classes=16)
+        self.accuracy = torchmetrics.Accuracy(task="multiclass", num_classes=9)
 
         # Save hyperparameters
         # self.save_hyperparameters(self.h_params)
@@ -52,10 +52,10 @@ class ImitationClassification(pl.LightningModule):
         # Predict and calculate loss
         output = self.forward(images, command, kalman)
         criterion = nn.CrossEntropyLoss()
-        loss = criterion(output, action)
+        loss = criterion(output, action.squeeze(1))
 
         # Calculate accuracy
-        self.accuracy(output, action)
+        self.accuracy(output.argmax(dim=1), action.squeeze(1))
 
         self.log('losses/train_loss', loss, on_step=False, on_epoch=True)
         self.log('train_acc_step', self.accuracy)
@@ -67,10 +67,10 @@ class ImitationClassification(pl.LightningModule):
         # Predict and calculate loss
         output = self.forward(images, command, kalman)
         criterion = nn.CrossEntropyLoss()
-        loss = criterion(output, action)
+        loss = criterion(output, action.squeeze(1))
 
         # Calculate accuracy
-        self.accuracy(output, action)
+        self.accuracy(output.argmax(dim=1), action.squeeze(1))
 
         self.log('losses/val_loss', loss, on_step=False, on_epoch=True)
         self.log('validation_acc_step', self.accuracy)

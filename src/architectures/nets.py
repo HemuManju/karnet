@@ -251,7 +251,7 @@ class ActionNet(pl.LightningModule):
             nn.Linear(self.layer_size, self.layer_size // 2),
             nn.ReLU(),
             nn.Linear(self.layer_size // 2, output_size),
-            nn.ReLU(),
+            # nn.ReLU(),
         )
 
     def forward(self, x):
