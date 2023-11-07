@@ -1,9 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=carnet           # job name
+#SBATCH --job-name=karnet           # job name
 #SBATCH --account=gts-hmanjunatha6  # account to which job is charged, ex: GT-pt43
 #SBATCH --nodes=1 			        # number of CPUs
-#SBATCH --ntasks-per-node=4         # number of cores
-#SBATCH --mem-per-cpu=8G   		    # memory per core
+#SBATCH --mem-per-cpu=4G   		    # memory per core
 #SBATCH --gres=gpu:V100:1           # GPU config
 #SBACTH --mem-per-gpu=16G           # GPU memory
 #SBATCH --time=15:00:00		        # duration of the job (ex: 15 min)

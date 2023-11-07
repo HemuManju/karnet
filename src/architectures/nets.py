@@ -349,7 +349,6 @@ class CARNet(pl.LightningModule):
         self.after_rnn = nn.LazyLinear(latent_size)
 
     def forward(self, x, k_states=None):
-
         batch_size, timesteps, C, H, W = x.size()
         # Encoder
         embeddings = self.cnn_autoencoder.encode(
@@ -407,7 +406,6 @@ class CARNetExtended(pl.LightningModule):
         self.after_rnn = nn.LazyLinear(latent_size)
 
     def forward(self, x, kalman=None):
-
         batch_size, timesteps, C, H, W = x.size()
         # Encoder
         cnn_embeddings = self.cnn_autoencoder.encode(
@@ -739,7 +737,6 @@ class CIRLCARNet(pl.LightningModule):
         return model
 
     def forward(self, x, command, kalman=None):
-
         batch_size, timesteps, C, H, W = x.size()
 
         # Future latent vector prediction
@@ -796,7 +793,6 @@ class MultistepCIRLCARNet(pl.LightningModule):
         return model
 
     def forward(self, x, command, kalman=None):
-
         batch_size, timesteps, C, H, W = x.size()
 
         # Future latent vector prediction
@@ -826,6 +822,37 @@ class MultistepCIRLCARNet(pl.LightningModule):
 
         # Transition layer
         out = self.transition_layer(combined_embeddings)
+
+        # Action prediction
+        waypoints, speed = self.action_net(out, command)
+        return waypoints, speed
+
+
+class KalmanStateNet(pl.LightningModule):
+    """A simple convolution neural network"""
+
+    def __init__(self, model_config):
+        super(KalmanStateNet, self).__init__()
+
+        # Parameters
+        self.cfg = model_config
+        image_size = self.cfg['image_resize']
+        obs_size = self.cfg['seq_length']
+        self.time_steps = self.cfg['seq_length'] - 1
+
+        # Example inputs
+        self.example_input_array = torch.randn((5, self.time_steps, *image_size))
+        self.example_command = torch.tensor([1, 0, 2, 3, 1])
+        self.example_kalman = torch.rand((5, 3, 1, 2, 4))
+
+        self.action_net = self.cfg['action_net']
+        self.transition_layer = nn.LazyLinear(512)
+
+    def forward(self, x, command, kalman=None):
+        batch_size, timesteps, C, H, W = x.size()
+        kalman_embeddings = kalman.view(batch_size * timesteps, -1)
+
+        out = self.transition_layer(kalman_embeddings)
 
         # Action prediction
         waypoints, speed = self.action_net(out, command)

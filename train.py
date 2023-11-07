@@ -40,6 +40,7 @@ from src.architectures.nets import (
     ResCARNet,
     AutoRegressorBranchNet,
     MultistepCIRLCARNet,
+    KalmanStateNet,
 )
 
 
@@ -99,7 +100,10 @@ with skip_run('skip', 'carnet_autoencoder_training') as check, check():
         model = Autoencoder(cfg, net, data_loader)
     else:
         model = Autoencoder.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -146,7 +150,10 @@ with skip_run('skip', 'carnet_semseg_training') as check, check():
         model = SemanticSegmentation(cfg, net, data_loader)
     else:
         model = SemanticSegmentation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -178,7 +185,10 @@ with skip_run('skip', 'verify_autoencoder') as check, check():
     # Dataloader
     data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
     model = Autoencoder.load_from_checkpoint(
-        read_path, hparams=cfg, net=net, data_loader=data_loader,
+        read_path,
+        hparams=cfg,
+        net=net,
+        data_loader=data_loader,
     )
     model.eval()
 
@@ -213,7 +223,10 @@ with skip_run('skip', 'verify_segmentation') as check, check():
     # Dataloader
     data_loader = get_webdataset_data_iterator(cfg, semseg_samples)
     model = SemanticSegmentation.load_from_checkpoint(
-        read_path, hparams=cfg, net=net, data_loader=data_loader,
+        read_path,
+        hparams=cfg,
+        net=net,
+        data_loader=data_loader,
     )
     model.eval()
 
@@ -268,7 +281,10 @@ with skip_run('skip', 'carnet_training') as check, check():
         model = RNNEncoder(cfg, net, data_loader)
     else:
         model = Autoencoder.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -371,7 +387,10 @@ with skip_run('skip', 'rescarnet_training') as check, check():
         model = RNNSegmentation(cfg, net, data_loader)
     else:
         model = SemanticSegmentation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -564,7 +583,10 @@ with skip_run('skip', 'carnet_with_kalman_training') as check, check():
         model = KalmanRNNEncoder(cfg, net, data_loader)
     else:
         model = KalmanRNNEncoder.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -630,7 +652,10 @@ with skip_run('skip', 'imitation_with_carnet') as check, check():
         model = Imitation(cfg, net, data_loader)
     else:
         model = Imitation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -691,7 +716,10 @@ with skip_run('skip', 'multistep_imitation_with_carnet') as check, check():
         model = Imitation(cfg, net, data_loader)
     else:
         model = Imitation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     if cfg['slurm']:
@@ -768,7 +796,6 @@ with skip_run('skip', 'verify_carnet_imitation') as check, check():
     speed_pred = []
     speed = []
     for i, data in enumerate(dataset):
-
         images, commands, actions = data[0], data[1], data[2]
         output = model(images.unsqueeze(0), torch.tensor(commands).unsqueeze(0))
         actions = actions[0].reshape(-1, 2).detach().numpy()
@@ -861,7 +888,10 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
         model = Imitation(cfg, net, data_loader)
     else:
         model = Imitation.load_from_checkpoint(
-            cfg['check_point_path'], hparams=cfg, net=net, data_loader=data_loader,
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
         )
     # Trainer
     trainer = pl.Trainer(
@@ -871,6 +901,82 @@ with skip_run('skip', 'imitation_with_kalman_carnet') as check, check():
         callbacks=[checkpoint_callback],
         enable_progress_bar=False,
     )
+    trainer.fit(model)
+
+with skip_run('skip', 'imitation_with_kalman_state') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/IMITATION_KALMAN'
+
+    # Random seed
+    gpus = get_num_gpus()
+    torch.manual_seed(cfg['pytorch_seed'])
+
+    # Checkpoint
+    navigation_type = cfg['navigation_types'][0]
+    if cfg['slurm']:
+        cfg['raw_data_path'] = cfg['raw_data_path_slurm'] + f'/{navigation_type}'
+    else:
+        cfg['raw_data_path'] = cfg['raw_data_path_local'] + f'/{navigation_type}'
+
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        monitor='losses/val_loss',
+        dirpath=cfg['logs_path'],
+        save_top_k=1,
+        filename=f'imitation_{navigation_type}',
+        mode='min',
+        save_last=True,
+    )
+    logger = pl.loggers.TensorBoardLogger(
+        cfg['logs_path'], name=f'imitation_{navigation_type}'
+    )
+
+    # Setup
+
+    # Action net
+    action_net = AutoRegressorBranchNet(dropout=0, hparams=cfg)
+    cfg['action_net'] = action_net
+
+    # Kalmnn filter
+    cfg['ekf'] = ExtendedKalmanFilter(cfg)
+
+    net = KalmanStateNet(cfg)
+    waypoint, speed = net(
+        net.example_input_array, net.example_command, net.example_kalman
+    )
+
+    # Dataloader
+    data_loader = imitation_dataset.webdataset_data_iterator(cfg)
+    if cfg['check_point_path'] is None:
+        model = Imitation(cfg, net, data_loader)
+    else:
+        model = Imitation.load_from_checkpoint(
+            cfg['check_point_path'],
+            hparams=cfg,
+            net=net,
+            data_loader=data_loader,
+        )
+    # Trainer
+    if cfg['slurm']:
+        trainer = pl.Trainer(
+            accelerator='gpu',
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=False,
+            strategy="ddp",
+            num_nodes=1,
+        )
+    else:
+        trainer = pl.Trainer(
+            gpus=gpus,
+            max_epochs=cfg['NUM_EPOCHS'],
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            enable_progress_bar=True,
+        )
+
     trainer.fit(model)
 
 with skip_run('skip', 'verify_carnet_imitation') as check, check():
@@ -925,7 +1031,6 @@ with skip_run('skip', 'verify_carnet_imitation') as check, check():
     speed_pred = []
     speed = []
     for i, data in enumerate(dataset):
-
         images, commands, actions = data[0], data[1], data[2]
         output = model(images.unsqueeze(0), torch.tensor(commands).unsqueeze(0))
         actions = actions[0].reshape(-1, 2).detach().numpy()
@@ -1021,7 +1126,7 @@ with skip_run('skip', 'benchmark_trained_imitation_model') as check, check():
         benchmark.run(config, exp_id)
 
     # Kill all servers
-    kill_all_servers()(model, cfg)
+    kill_all_servers()
 
 with skip_run('skip', 'benchmark_trained_imitation_kalman_model') as check, check():
     # Load the configuration
@@ -1082,7 +1187,7 @@ with skip_run('skip', 'benchmark_trained_imitation_kalman_model') as check, chec
         benchmark.run(config, exp_id)
 
     # Kill all servers
-    kill_all_servers()(model, cfg)
+    kill_all_servers()
 
 with skip_run('skip', 'benchmark_trained_imitation_carnet_kalman') as check, check():
     # Load the configuration
@@ -1143,7 +1248,58 @@ with skip_run('skip', 'benchmark_trained_imitation_carnet_kalman') as check, che
         benchmark.run(config, exp_id)
 
     # Kill all servers
-    kill_all_servers()(model, cfg)
+    kill_all_servers()
+
+with skip_run('skip', 'benchmark_kalman_state_imitation') as check, check():
+    # Load the configuration
+    cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
+
+    # Experiment_config and experiment suite
+    experiment_cfg = yaml.load(open('configs/experiments.yaml'), Loader=yaml.SafeLoader)
+    cfg = yaml.load(open('configs/carnet.yaml'), Loader=yaml.SafeLoader)
+    ekf = ExtendedKalmanFilter(cfg)
+    experiment_suite = CORL2017(experiment_cfg, ekf)
+
+    # Carla server
+    # Setup carla core and experiment
+    kill_all_servers()
+    os.environ["CARLA_ROOT"] = cfg['carla_server']['carla_path']
+    core = CarlaCore(cfg['carla_server'])
+
+    # Get all the experiment configs
+    all_experiment_configs = experiment_suite.get_experiment_configs()
+    for exp_id, config in enumerate(all_experiment_configs):
+        # Update the summary writer info
+        town = config['town']
+        navigation_type = config['navigation_type']
+        weather = config['weather']
+        config['summary_writer']['directory'] = f'{town}_{navigation_type}_{weather}'
+
+        # Update the model
+        restore_config = {
+            'checkpoint_path': f'logs/2023-10-27/IMITATION_KALMAN/imitation_{navigation_type}.ckpt'
+        }
+
+        # Action net
+        action_net = AutoRegressorBranchNet(dropout=0, hparams=cfg)
+        cfg['action_net'] = action_net
+        model = Imitation.load_from_checkpoint(
+            restore_config['checkpoint_path'],
+            hparams=cfg,
+            net=KalmanStateNet(cfg),
+            data_loader=None,
+        )
+
+        agent = PIDKalmanAgent(model=model, config=cfg)
+
+        # Setup the benchmark
+        benchmark = Benchmarking(core, cfg, agent, experiment_suite)
+
+        # Run the benchmark
+        benchmark.run(config, exp_id)
+
+    # Kill all servers
+    kill_all_servers()
 
 with skip_run('skip', 'benchmark_trained_carnet_model') as check, check():
     # Load the configuration
@@ -1162,7 +1318,6 @@ with skip_run('skip', 'benchmark_trained_carnet_model') as check, check():
     # Get all the experiment configs
     all_experiment_configs = experiment_suite.get_experiment_configs()
     for exp_id, config in enumerate(all_experiment_configs):
-
         # Update the summary writer info
         town = config['town']
         navigation_type = config['navigation_type']
@@ -1201,7 +1356,7 @@ with skip_run('skip', 'benchmark_trained_carnet_model') as check, check():
     # Kill all servers
     kill_all_servers()
 
-with skip_run('skip', 'summarize_benchmark') as check, check():
+with skip_run('run', 'summarize_benchmark') as check, check():
     # Load the configuration
     cfg = yaml.load(open('configs/imitation.yaml'), Loader=yaml.SafeLoader)
     cfg['logs_path'] = cfg['logs_path'] + str(date.today()) + '/WARMSTART'
